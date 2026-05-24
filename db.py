@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""SQLite database layer cho he thong theo doi tam ung."""
+"""SQLite database layer cho he thong theo doi tam ung (Quan ly theo Hop Dong)."""
 import sqlite3
 import os
 import re
@@ -16,13 +16,14 @@ def get_conn():
 
 
 def init_db():
-    """Khoi tao schema neu chua co."""
+    """Khoi tao schema."""
     conn = get_conn()
     c = conn.cursor()
     c.executescript("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL DEFAULT '123456',
         full_name TEXT NOT NULL,
         dept TEXT,
         role TEXT NOT NULL CHECK (role IN ('phong_kh', 'qttd', 'admin')),
@@ -41,14 +42,12 @@ def init_db():
         UNIQUE(year, normalized_name)
     );
 
-    CREATE TABLE IF NOT EXISTS tam_ung (
-        ma_giai_ngan TEXT PRIMARY KEY,
+    CREATE TABLE IF NOT EXISTS hop_dong (
+        ma_hop_dong TEXT PRIMARY KEY,
         khach_hang TEXT NOT NULL,
         don_vi_thu_huong TEXT,
         so_hd TEXT,
         gia_tri_hd REAL,
-        so_tien_tu REAL NOT NULL,
-        ngay_giai_ngan DATE NOT NULL,
         ngay_ket_thuc_hd DATE NOT NULL,
         loai_tu TEXT NOT NULL DEFAULT 'khau_tru_dot',
         pct_khau_tru REAL DEFAULT 0.1,
@@ -58,22 +57,33 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS tam_ung (
+        ma_giai_ngan TEXT PRIMARY KEY,
+        ma_hop_dong TEXT,
+        so_tien_tu REAL NOT NULL,
+        ngay_giai_ngan DATE NOT NULL,
+        ghi_chu TEXT,
+        created_by TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (ma_hop_dong) REFERENCES hop_dong(ma_hop_dong)
+    );
+
     CREATE TABLE IF NOT EXISTS hstt (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ma_giai_ngan TEXT NOT NULL,
+        ma_hop_dong TEXT NOT NULL,
         dot_so INTEGER NOT NULL,
         ngay_hstt DATE NOT NULL,
         kl_truoc_vat REAL NOT NULL,
         ghi_chu TEXT,
         created_by TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (ma_giai_ngan) REFERENCES tam_ung(ma_giai_ngan),
-        UNIQUE(ma_giai_ngan, dot_so)
+        FOREIGN KEY (ma_hop_dong) REFERENCES hop_dong(ma_hop_dong),
+        UNIQUE(ma_hop_dong, dot_so)
     );
 
     CREATE TABLE IF NOT EXISTS hoa_don (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ma_giai_ngan TEXT NOT NULL,
+        ma_hop_dong TEXT NOT NULL,
         dot_so INTEGER NOT NULL DEFAULT 1,
         so_hd TEXT NOT NULL,
         ngay_hd DATE NOT NULL,
@@ -90,12 +100,12 @@ def init_db():
         approved_by TEXT,
         approved_at TIMESTAMP,
         ghi_chu TEXT,
-        FOREIGN KEY (ma_giai_ngan) REFERENCES tam_ung(ma_giai_ngan)
+        FOREIGN KEY (ma_hop_dong) REFERENCES hop_dong(ma_hop_dong)
     );
 
     CREATE TABLE IF NOT EXISTS staging_hd (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ma_giai_ngan TEXT,
+        ma_hop_dong TEXT,
         dot_so INTEGER,
         so_hd TEXT,
         ngay_hd DATE,
@@ -122,27 +132,16 @@ def init_db():
     );
     """)
 
-    # Migration: add loai_tu column if not exists (for existing DBs)
-    try:
-        c.execute("SELECT loai_tu FROM tam_ung LIMIT 1")
-    except sqlite3.OperationalError:
-        c.execute("ALTER TABLE tam_ung ADD COLUMN loai_tu TEXT NOT NULL DEFAULT 'khau_tru_dot'")
-    except: pass
-    
-    try:
-        c.execute("ALTER TABLE tam_ung ADD COLUMN don_vi_thu_huong TEXT")
-    except: pass
-
     # Seed default users
     c.execute("SELECT COUNT(*) FROM users")
     if c.fetchone()[0] == 0:
         c.executemany(
-            "INSERT INTO users (username, full_name, dept, role) VALUES (?,?,?,?)",
+            "INSERT INTO users (username, password, full_name, dept, role) VALUES (?,?,?,?,?)",
             [
-                ("admin", "Quan tri he thong", "QTTD", "admin"),
-                ("qttd01", "Can bo QTTD 01", "QTTD", "qttd"),
-                ("phongkh_dn", "Phong KHDN", "KHDN", "phong_kh"),
-                ("phongkh_sme", "Phong KH SME", "SME", "phong_kh"),
+                ("admin", "admin@123", "Quan tri he thong", "QTTD", "admin"),
+                ("qttd01", "qttd01@123", "Can bo QTTD 01", "QTTD", "qttd"),
+                ("phongkh_dn", "phongkh_dn@123", "Phong KHDN", "KHDN", "phong_kh"),
+                ("phongkh_sme", "phongkh_sme@123", "Phong KH SME", "SME", "phong_kh"),
             ]
         )
     conn.commit()
@@ -153,7 +152,6 @@ def init_db():
 def normalize_company_name(name):
     """Chuan hoa ten cong ty de so sanh: bo tien to, loai hinh, uppercase, trim."""
     s = name.strip().upper()
-    # Remove common prefixes in order of specificity (longest first)
     prefixes = [
         r'CONG\s+TY\s+CO\s+PHAN\s+',
         r'CONG\s+TY\s+TNHH\s+MTV\s+',
@@ -173,7 +171,6 @@ def normalize_company_name(name):
         if s2 != s:
             s = s2
             break
-    # Also strip business type keywords that may remain after prefix removal
     for kw in ['TNHH MTV', 'TNHH', 'CO PHAN', 'CP', 'MTV']:
         s = re.sub(r'\b' + kw + r'\b', '', s)
     s = re.sub(r'\s+', ' ', s).strip()
@@ -181,12 +178,12 @@ def normalize_company_name(name):
 
 
 def list_distinct_companies():
-    """Lay danh sach ten cong ty da co (distinct) tu khach hang, don vi thu huong, ten nguoi ban."""
+    """Lay danh sach ten cong ty da co (distinct)."""
     with get_conn() as c:
         rows = c.execute("""
-            SELECT khach_hang FROM tam_ung WHERE khach_hang IS NOT NULL AND khach_hang != ''
+            SELECT khach_hang FROM hop_dong WHERE khach_hang IS NOT NULL AND khach_hang != ''
             UNION
-            SELECT don_vi_thu_huong FROM tam_ung WHERE don_vi_thu_huong IS NOT NULL AND don_vi_thu_huong != ''
+            SELECT don_vi_thu_huong FROM hop_dong WHERE don_vi_thu_huong IS NOT NULL AND don_vi_thu_huong != ''
             UNION
             SELECT ten_ban FROM hoa_don WHERE ten_ban IS NOT NULL AND ten_ban != ''
             ORDER BY 1
@@ -195,7 +192,6 @@ def list_distinct_companies():
 
 
 def find_similar_company(name):
-    """Tim cong ty co ten tuong tu (da chuan hoa) trong registry."""
     normalized = normalize_company_name(name)
     with get_conn() as c:
         row = c.execute(
@@ -205,51 +201,47 @@ def find_similar_company(name):
         return row[0] if row else None
 
 
-def generate_ma_giai_ngan(khach_hang, year=None):
-    """Tu sinh ma giai ngan: TU-YYYY-NNN.XX
-    NNN = so thu tu cong ty trong nam
-    XX  = lan tam ung thu may cua cong ty do trong nam
-    """
-    if year is None:
-        year = date.today().year
+def get_or_create_company_seq(khach_hang, year):
     normalized = normalize_company_name(khach_hang)
-
-    conn = get_conn()
-    try:
-        c = conn.cursor()
-        # Check if company already exists in registry for this year
+    with get_conn() as c:
         existing = c.execute(
-            "SELECT * FROM company_registry WHERE normalized_name=? AND year=?",
+            "SELECT company_seq FROM company_registry WHERE normalized_name=? AND year=?",
             (normalized, year)
         ).fetchone()
-
+        
         if existing:
-            company_seq = existing['company_seq']
-        else:
-            # Get next company seq for this year
-            max_seq = c.execute(
-                "SELECT COALESCE(MAX(company_seq), 0) FROM company_registry WHERE year=?",
-                (year,)
-            ).fetchone()[0]
-            company_seq = max_seq + 1
-            c.execute(
-                "INSERT INTO company_registry (company_name, normalized_name, company_seq, year) VALUES (?,?,?,?)",
-                (khach_hang.strip(), normalized, company_seq, year)
-            )
-
-        # Count existing TU for this company in this year
-        pattern = f"TU-{year}-{company_seq:03d}.%"
-        count = c.execute(
-            "SELECT COUNT(*) FROM tam_ung WHERE ma_giai_ngan LIKE ?",
-            (pattern,)
+            return existing[0]
+            
+        max_seq = c.execute(
+            "SELECT COALESCE(MAX(company_seq), 0) FROM company_registry WHERE year=?",
+            (year,)
         ).fetchone()[0]
-        tu_seq = count + 1
+        company_seq = max_seq + 1
+        c.execute(
+            "INSERT INTO company_registry (company_name, normalized_name, company_seq, year) VALUES (?,?,?,?)",
+            (khach_hang.strip(), normalized, company_seq, year)
+        )
+        return company_seq
 
-        ma = f"TU-{year}-{company_seq:03d}.{tu_seq:02d}"
-        conn.commit()
-        return ma
-    finally:
-        conn.close()
+def find_hop_dong_by_so(khach_hang, so_hd):
+    """Tim hop dong da ton tai theo khach hang va so_hd."""
+    if not so_hd: return None
+    with get_conn() as c:
+        return c.execute("SELECT * FROM hop_dong WHERE khach_hang=? AND so_hd=?", (khach_hang, so_hd)).fetchone()
+
+def generate_ma_hop_dong(khach_hang, year=None):
+    if year is None: year = date.today().year
+    company_seq = get_or_create_company_seq(khach_hang, year)
+    with get_conn() as c:
+        count = c.execute("SELECT COUNT(*) FROM hop_dong WHERE ma_hop_dong LIKE ?", (f"HD-{year}-{company_seq:03d}.%",)).fetchone()[0]
+        return f"HD-{year}-{company_seq:03d}.{count+1:02d}"
+
+def generate_ma_giai_ngan(khach_hang, year=None):
+    if year is None: year = date.today().year
+    company_seq = get_or_create_company_seq(khach_hang, year)
+    with get_conn() as c:
+        count = c.execute("SELECT COUNT(*) FROM tam_ung WHERE ma_giai_ngan LIKE ?", (f"TU-{year}-{company_seq:03d}.%",)).fetchone()[0]
+        return f"TU-{year}-{company_seq:03d}.{count+1:02d}"
 
 
 # ---- Users ----
@@ -263,72 +255,87 @@ def get_user(username):
         return c.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
 
 
-# ---- Tam ung ----
-def list_tam_ung(phong=None):
+# ---- Hop dong ----
+def list_hop_dong(phong=None):
     with get_conn() as c:
         if phong:
             return c.execute(
-                "SELECT * FROM tam_ung WHERE phong_phu_trach=? ORDER BY ngay_giai_ngan DESC", (phong,)
+                "SELECT * FROM hop_dong WHERE phong_phu_trach=? ORDER BY created_at DESC", (phong,)
             ).fetchall()
-        return c.execute("SELECT * FROM tam_ung ORDER BY ngay_giai_ngan DESC").fetchall()
+        return c.execute("SELECT * FROM hop_dong ORDER BY created_at DESC").fetchall()
 
 
-def get_tam_ung(ma):
+def get_hop_dong(ma):
     with get_conn() as c:
-        return c.execute("SELECT * FROM tam_ung WHERE ma_giai_ngan=?", (ma,)).fetchone()
+        return c.execute("SELECT * FROM hop_dong WHERE ma_hop_dong=?", (ma,)).fetchone()
+
+
+def add_hop_dong(data, user):
+    with get_conn() as c:
+        c.execute("""INSERT INTO hop_dong
+            (ma_hop_dong, khach_hang, don_vi_thu_huong, so_hd, gia_tri_hd,
+             ngay_ket_thuc_hd, loai_tu, pct_khau_tru, phong_phu_trach, ghi_chu, created_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (data["ma_hop_dong"], data["khach_hang"], data.get("don_vi_thu_huong"), data.get("so_hd"),
+             data.get("gia_tri_hd"), data["ngay_ket_thuc_hd"],
+             data.get("loai_tu", "khau_tru_dot"), data.get("pct_khau_tru", 0.1),
+             data.get("phong_phu_trach"), data.get("ghi_chu"), user))
+        c.commit()
+        log(c, "ADD_HOP_DONG", "hop_dong", data["ma_hop_dong"], user, "")
+
+
+# ---- Tam ung (Giai ngan) ----
+def list_tam_ung(ma_hop_dong):
+    with get_conn() as c:
+        return c.execute("SELECT * FROM tam_ung WHERE ma_hop_dong=? ORDER BY ngay_giai_ngan ASC", (ma_hop_dong,)).fetchall()
 
 
 def add_tam_ung(data, user):
     with get_conn() as c:
         c.execute("""INSERT INTO tam_ung
-            (ma_giai_ngan, khach_hang, don_vi_thu_huong, so_hd, gia_tri_hd, so_tien_tu,
-             ngay_giai_ngan, ngay_ket_thuc_hd, loai_tu, pct_khau_tru,
-             phong_phu_trach, ghi_chu, created_by)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (data["ma_giai_ngan"], data["khach_hang"], data.get("don_vi_thu_huong"), data.get("so_hd"),
-             data.get("gia_tri_hd"), data["so_tien_tu"],
-             data["ngay_giai_ngan"], data["ngay_ket_thuc_hd"],
-             data.get("loai_tu", "khau_tru_dot"),
-             data.get("pct_khau_tru", 0.1),
-             data.get("phong_phu_trach"),
-             data.get("ghi_chu"), user))
+            (ma_giai_ngan, ma_hop_dong, so_tien_tu, ngay_giai_ngan, ghi_chu, created_by)
+            VALUES (?,?,?,?,?,?)""",
+            (data["ma_giai_ngan"], data["ma_hop_dong"], data["so_tien_tu"],
+             data["ngay_giai_ngan"], data.get("ghi_chu"), user))
         c.commit()
-        log(c, "ADD_TAM_UNG", "tam_ung", data["ma_giai_ngan"], user, str(data))
+        log(c, "ADD_GIAI_NGAN", "tam_ung", data["ma_giai_ngan"], user, f"Vào HD {data['ma_hop_dong']}")
 
 
-def delete_tam_ung(ma, user):
+def delete_hop_dong(ma, user):
     with get_conn() as c:
-        c.execute("DELETE FROM tam_ung WHERE ma_giai_ngan=?", (ma,))
+        c.execute("DELETE FROM hop_dong WHERE ma_hop_dong=?", (ma,))
+        # cascades to tam_ung, hoa_don, hstt if foreign key allows, otherwise manual:
+        c.execute("DELETE FROM tam_ung WHERE ma_hop_dong=?", (ma,))
+        c.execute("DELETE FROM hoa_don WHERE ma_hop_dong=?", (ma,))
+        c.execute("DELETE FROM hstt WHERE ma_hop_dong=?", (ma,))
         c.commit()
-        log(c, "DEL_TAM_UNG", "tam_ung", ma, user, "")
+        log(c, "DEL_HOP_DONG", "hop_dong", ma, user, "")
 
 
 # ---- HSTT ----
-def list_hstt(ma_tu=None):
+def list_hstt(ma_hop_dong=None):
     with get_conn() as c:
-        if ma_tu:
-            return c.execute(
-                "SELECT * FROM hstt WHERE ma_giai_ngan=? ORDER BY dot_so", (ma_tu,)
-            ).fetchall()
-        return c.execute("SELECT * FROM hstt ORDER BY ma_giai_ngan, dot_so").fetchall()
+        if ma_hop_dong:
+            return c.execute("SELECT * FROM hstt WHERE ma_hop_dong=? ORDER BY dot_so", (ma_hop_dong,)).fetchall()
+        return c.execute("SELECT * FROM hstt ORDER BY ma_hop_dong, dot_so").fetchall()
 
 
 def add_hstt(data, user):
     with get_conn() as c:
         c.execute("""INSERT INTO hstt
-            (ma_giai_ngan, dot_so, ngay_hstt, kl_truoc_vat, ghi_chu, created_by)
+            (ma_hop_dong, dot_so, ngay_hstt, kl_truoc_vat, ghi_chu, created_by)
             VALUES (?,?,?,?,?,?)""",
-            (data["ma_giai_ngan"], data["dot_so"], data["ngay_hstt"],
+            (data["ma_hop_dong"], data["dot_so"], data["ngay_hstt"],
              data["kl_truoc_vat"], data.get("ghi_chu"), user))
         c.commit()
-        log(c, "ADD_HSTT", "hstt", f"{data['ma_giai_ngan']}/dot{data['dot_so']}", user, str(data))
+        log(c, "ADD_HSTT", "hstt", f"{data['ma_hop_dong']}/dot{data['dot_so']}", user, "")
 
 
 # ---- Hoa don ----
-def list_hoa_don(ma_tu=None, dot=None, status=None):
+def list_hoa_don(ma_hop_dong=None, dot=None, status=None):
     q = "SELECT * FROM hoa_don WHERE 1=1"
     args = []
-    if ma_tu: q += " AND ma_giai_ngan=?"; args.append(ma_tu)
+    if ma_hop_dong: q += " AND ma_hop_dong=?"; args.append(ma_hop_dong)
     if dot is not None: q += " AND dot_so=?"; args.append(dot)
     if status: q += " AND status=?"; args.append(status)
     q += " ORDER BY uploaded_at DESC"
@@ -339,11 +346,11 @@ def list_hoa_don(ma_tu=None, dot=None, status=None):
 def add_hoa_don(data, user, status="approved"):
     with get_conn() as c:
         c.execute("""INSERT INTO hoa_don
-            (ma_giai_ngan, dot_so, so_hd, ngay_hd, mst_ban, ten_ban,
+            (ma_hop_dong, dot_so, so_hd, ngay_hd, mst_ban, ten_ban,
              tien_truoc_vat, vat, tong_cong, ma_tra_cuu, file_src,
              status, uploaded_by, approved_by, approved_at, ghi_chu)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (data["ma_giai_ngan"], data.get("dot_so", 1), data["so_hd"], data["ngay_hd"],
+            (data["ma_hop_dong"], data.get("dot_so", 1), data["so_hd"], data["ngay_hd"],
              data.get("mst_ban"), data.get("ten_ban"),
              data["tien_truoc_vat"], data["vat"], data.get("tong_cong"),
              data.get("ma_tra_cuu"), data.get("file_src"),
@@ -352,7 +359,7 @@ def add_hoa_don(data, user, status="approved"):
              datetime.now() if status == "approved" else None,
              data.get("ghi_chu")))
         c.commit()
-        log(c, "ADD_HOA_DON", "hoa_don", data["so_hd"], user, str(data))
+        log(c, "ADD_HOA_DON", "hoa_don", data["so_hd"], user, "")
 
 
 def approve_hoa_don(hd_id, user):
@@ -360,7 +367,6 @@ def approve_hoa_don(hd_id, user):
         c.execute("UPDATE hoa_don SET status='approved', approved_by=?, approved_at=? WHERE id=?",
                   (user, datetime.now(), hd_id))
         c.commit()
-        log(c, "APPROVE_HOA_DON", "hoa_don", str(hd_id), user, "")
 
 
 def reject_hoa_don(hd_id, user, reason=""):
@@ -368,17 +374,16 @@ def reject_hoa_don(hd_id, user, reason=""):
         c.execute("UPDATE hoa_don SET status='rejected', approved_by=?, approved_at=?, ghi_chu=? WHERE id=?",
                   (user, datetime.now(), reason, hd_id))
         c.commit()
-        log(c, "REJECT_HOA_DON", "hoa_don", str(hd_id), user, reason)
 
 
 # ---- Staging ----
 def add_staging(data, user):
     with get_conn() as c:
         cur = c.execute("""INSERT INTO staging_hd 
-            (ma_giai_ngan, dot_so, so_hd, ngay_hd, mst_ban, ten_ban, tien_truoc_vat, vat, tong_cong,
+            (ma_hop_dong, dot_so, so_hd, ngay_hd, mst_ban, ten_ban, tien_truoc_vat, vat, tong_cong,
              ma_tra_cuu, file_src, parse_status, uploaded_by)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (data.get("ma_giai_ngan"), data.get("dot_so"), data.get("so_hd"), data.get("ngay_hd"), data.get("mst_ban"),
+            (data.get("ma_hop_dong"), data.get("dot_so"), data.get("so_hd"), data.get("ngay_hd"), data.get("mst_ban"),
              data.get("ten_ban"), data.get("tien_truoc_vat"), data.get("vat"),
              data.get("tong_cong"), data.get("ma_tra_cuu"),
              data.get("file_src"), data.get("parse_status"), user))
@@ -393,13 +398,6 @@ def list_staging(user=None):
         return c.execute("SELECT * FROM staging_hd ORDER BY uploaded_at DESC").fetchall()
 
 
-def update_staging_assignment(staging_id, ma_tu, dot):
-    with get_conn() as c:
-        c.execute("UPDATE staging_hd SET ma_giai_ngan=?, dot_so=? WHERE id=?",
-                  (ma_tu, dot, staging_id))
-        c.commit()
-
-
 def delete_staging(staging_id):
     with get_conn() as c:
         c.execute("DELETE FROM staging_hd WHERE id=?", (staging_id,))
@@ -409,7 +407,6 @@ def delete_staging(staging_id):
 def delete_hoa_don(hd_id, user):
     with get_conn() as c:
         c.execute("DELETE FROM hoa_don WHERE id=?", (hd_id,))
-        log(c, "DELETE", "hoa_don", hd_id, user, f"Xoa HD ID {hd_id}")
         c.commit()
 
 
@@ -419,25 +416,38 @@ def get_staging(staging_id):
 
 
 # ---- Calc helpers ----
-def calc_summary(ma_tu):
-    """Tinh luy ke khau tru, HD bo sung, du can bo sung cho mot mon."""
+def calc_summary(ma_hop_dong):
+    """Tinh luy ke giai ngan, khau tru, HD bo sung, du can bo sung cho 1 Hop Dong."""
     with get_conn() as c:
-        tu = c.execute("SELECT * FROM tam_ung WHERE ma_giai_ngan=?", (ma_tu,)).fetchone()
-        if not tu: return None
-        pct = tu["pct_khau_tru"] or 0
+        hd = c.execute("SELECT * FROM hop_dong WHERE ma_hop_dong=?", (ma_hop_dong,)).fetchone()
+        if not hd: return None
+        
+        # Tong tien da giai ngan cho HD nay
+        gn_row = c.execute(
+            "SELECT COALESCE(SUM(so_tien_tu), 0), MIN(ngay_giai_ngan) FROM tam_ung WHERE ma_hop_dong=?",
+            (ma_hop_dong,)
+        ).fetchone()
+        tong_giai_ngan = gn_row[0]
+        ngay_gn_dau = gn_row[1]
+        
+        pct = hd["pct_khau_tru"] or 0
         kt_luy_ke = c.execute(
-            "SELECT COALESCE(SUM(kl_truoc_vat * ?),0) FROM hstt WHERE ma_giai_ngan=?",
-            (pct, ma_tu)
+            "SELECT COALESCE(SUM(kl_truoc_vat * ?),0) FROM hstt WHERE ma_hop_dong=?",
+            (pct, ma_hop_dong)
         ).fetchone()[0]
+        
         hd_luy_ke = c.execute(
-            "SELECT COALESCE(SUM(tien_truoc_vat),0) FROM hoa_don WHERE ma_giai_ngan=? AND status='approved'",
-            (ma_tu,)
+            "SELECT COALESCE(SUM(tien_truoc_vat),0) FROM hoa_don WHERE ma_hop_dong=? AND status='approved'",
+            (ma_hop_dong,)
         ).fetchone()[0]
-        du = max(tu["so_tien_tu"] - hd_luy_ke, 0)
-        pct_done = hd_luy_ke / tu["so_tien_tu"] if tu["so_tien_tu"] else 0
+        
+        du = max(tong_giai_ngan - hd_luy_ke, 0)
+        pct_done = hd_luy_ke / tong_giai_ngan if tong_giai_ngan > 0 else 0
+        
         return {
-            "so_tien_tu": tu["so_tien_tu"],
-            "loai_tu": tu["loai_tu"],
+            "tong_giai_ngan": tong_giai_ngan,
+            "ngay_giai_ngan_dau": ngay_gn_dau,
+            "loai_tu": hd["loai_tu"],
             "khau_tru_luy_ke": kt_luy_ke,
             "hd_luy_ke": hd_luy_ke,
             "du_can_bo_sung": du,
@@ -451,7 +461,6 @@ def log(conn, action, entity, entity_id, username, details):
         "INSERT INTO audit_log (action, entity, entity_id, username, details) VALUES (?,?,?,?,?)",
         (action, entity, entity_id, username, details)
     )
-
 
 def recent_audit(limit=50):
     with get_conn() as c:
