@@ -45,6 +45,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS hop_dong (
         ma_hop_dong TEXT PRIMARY KEY,
         khach_hang TEXT NOT NULL,
+        cif TEXT,
         don_vi_thu_huong TEXT,
         so_hd TEXT,
         gia_tri_hd REAL,
@@ -144,6 +145,21 @@ def init_db():
                 ("phongkh_sme", "phongkh_sme@123", "Phong KH SME", "SME", "phong_kh"),
             ]
         )
+        
+    # MIGRATIONS: Add new columns if they don't exist
+    def add_col_if_not_exists(table, col_name, col_type):
+        c.execute(f"PRAGMA table_info({table})")
+        cols = [r["name"] for r in c.fetchall()]
+        if col_name not in cols:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
+
+    add_col_if_not_exists("hop_dong", "cif", "TEXT")
+    add_col_if_not_exists("hop_dong", "don_vi_thu_huong", "TEXT")
+    add_col_if_not_exists("hop_dong", "loai_gia_tri_kt", "TEXT")
+    add_col_if_not_exists("hstt", "vat", "REAL")
+    add_col_if_not_exists("hstt", "tong_cong", "REAL")
+    add_col_if_not_exists("hstt", "loai_kl", "TEXT")
+    
     conn.commit()
     conn.close()
 
@@ -273,13 +289,13 @@ def get_hop_dong(ma):
 def add_hop_dong(data, user):
     with get_conn() as c:
         c.execute("""INSERT INTO hop_dong
-            (ma_hop_dong, khach_hang, don_vi_thu_huong, so_hd, gia_tri_hd,
-             ngay_ket_thuc_hd, loai_tu, pct_khau_tru, phong_phu_trach, ghi_chu, created_by)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            (data["ma_hop_dong"], data["khach_hang"], data.get("don_vi_thu_huong"), data.get("so_hd"),
+            (ma_hop_dong, khach_hang, cif, don_vi_thu_huong, so_hd, gia_tri_hd,
+             ngay_ket_thuc_hd, loai_tu, loai_gia_tri_kt, pct_khau_tru, phong_phu_trach, ghi_chu, created_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (data["ma_hop_dong"], data["khach_hang"], data.get("cif"), data.get("don_vi_thu_huong"), data.get("so_hd"),
              data.get("gia_tri_hd"), data["ngay_ket_thuc_hd"],
-             data.get("loai_tu", "khau_tru_dot"), data.get("pct_khau_tru", 0.1),
-             data.get("phong_phu_trach"), data.get("ghi_chu"), user))
+             data.get("loai_tu", "khau_tru_dot"), data.get("loai_gia_tri_kt", "Trước VAT"),
+             data.get("pct_khau_tru", 10.0), data.get("phong_phu_trach"), data.get("ghi_chu"), user))
         c.commit()
         log(c, "ADD_HOP_DONG", "hop_dong", data["ma_hop_dong"], user, "")
 
@@ -300,14 +316,21 @@ def add_tam_ung(data, user):
         c.commit()
         log(c, "ADD_GIAI_NGAN", "tam_ung", data["ma_giai_ngan"], user, f"Vào HD {data['ma_hop_dong']}")
 
+def update_tam_ung_ghi_chu(ma_giai_ngan, ghi_chu):
+    with get_conn() as c:
+        c.execute("UPDATE tam_ung SET ghi_chu=? WHERE ma_giai_ngan=?", (ghi_chu, ma_giai_ngan))
+        c.commit()
+
 
 def delete_hop_dong(ma, user):
     with get_conn() as c:
-        c.execute("DELETE FROM hop_dong WHERE ma_hop_dong=?", (ma,))
-        # cascades to tam_ung, hoa_don, hstt if foreign key allows, otherwise manual:
+        # Xóa các bảng con trước để tránh lỗi Foreign Key
         c.execute("DELETE FROM tam_ung WHERE ma_hop_dong=?", (ma,))
         c.execute("DELETE FROM hoa_don WHERE ma_hop_dong=?", (ma,))
         c.execute("DELETE FROM hstt WHERE ma_hop_dong=?", (ma,))
+        c.execute("DELETE FROM staging_hd WHERE ma_hop_dong=?", (ma,))
+        # Sau đó xóa bảng cha
+        c.execute("DELETE FROM hop_dong WHERE ma_hop_dong=?", (ma,))
         c.commit()
         log(c, "DEL_HOP_DONG", "hop_dong", ma, user, "")
 
@@ -323,10 +346,11 @@ def list_hstt(ma_hop_dong=None):
 def add_hstt(data, user):
     with get_conn() as c:
         c.execute("""INSERT INTO hstt
-            (ma_hop_dong, dot_so, ngay_hstt, kl_truoc_vat, ghi_chu, created_by)
-            VALUES (?,?,?,?,?,?)""",
+            (ma_hop_dong, dot_so, ngay_hstt, kl_truoc_vat, vat, tong_cong, loai_kl, ghi_chu, created_by)
+            VALUES (?,?,?,?,?,?,?,?,?)""",
             (data["ma_hop_dong"], data["dot_so"], data["ngay_hstt"],
-             data["kl_truoc_vat"], data.get("ghi_chu"), user))
+             data["kl_truoc_vat"], data.get("vat", 0), data.get("tong_cong", data["kl_truoc_vat"]),
+             data.get("loai_kl", "Trước VAT"), data.get("ghi_chu"), user))
         c.commit()
         log(c, "ADD_HSTT", "hstt", f"{data['ma_hop_dong']}/dot{data['dot_so']}", user, "")
 
@@ -430,11 +454,18 @@ def calc_summary(ma_hop_dong):
         tong_giai_ngan = gn_row[0]
         ngay_gn_dau = gn_row[1]
         
-        pct = hd["pct_khau_tru"] or 0
-        kt_luy_ke = c.execute(
-            "SELECT COALESCE(SUM(kl_truoc_vat * ?),0) FROM hstt WHERE ma_hop_dong=?",
-            (pct, ma_hop_dong)
-        ).fetchone()[0]
+        pct = (hd["pct_khau_tru"] or 0) / 100.0
+        loai_kt = hd["loai_gia_tri_kt"] if hd["loai_gia_tri_kt"] else "Trước VAT"
+        if loai_kt == "Sau VAT":
+            kt_luy_ke = c.execute(
+                "SELECT COALESCE(SUM(COALESCE(tong_cong, kl_truoc_vat) * ?),0) FROM hstt WHERE ma_hop_dong=?",
+                (pct, ma_hop_dong)
+            ).fetchone()[0]
+        else:
+            kt_luy_ke = c.execute(
+                "SELECT COALESCE(SUM(kl_truoc_vat * ?),0) FROM hstt WHERE ma_hop_dong=?",
+                (pct, ma_hop_dong)
+            ).fetchone()[0]
         
         hd_luy_ke = c.execute(
             "SELECT COALESCE(SUM(tien_truoc_vat),0) FROM hoa_don WHERE ma_hop_dong=? AND status='approved'",
