@@ -6,10 +6,15 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 
 
-def _num(s):
+def _num(s, is_xml=False):
     if s is None: return None
     s = str(s).strip().replace(" ", "")
     if not s: return None
+    
+    if is_xml:
+        try: return float(s)
+        except: return None
+
     if "," in s and "." in s:
         if s.rfind(",") > s.rfind("."):
             s = s.replace(".", "").replace(",", ".")
@@ -69,6 +74,7 @@ def parse_xml(path_or_bytes, filename=None):
         "so_hd": None, "ngay_hd": None,
         "mst_ban": None, "ten_ban": None,
         "tien_truoc_vat": None, "vat": None, "tong_cong": None,
+        "mau_so_hd": None, "ky_hieu_hd": None,
         "ma_tra_cuu": None, "parse_status": "OK",
     }
     try:
@@ -96,13 +102,18 @@ def parse_xml(path_or_bytes, filename=None):
         result["ten_ban"] = _findtext_any(seller_block, ["Ten", "Name", "TenDV"])
 
     pre = _findtext_any(root, ["TgTCThue", "TotalAmountWithoutVAT", "TongTienChuaThue"])
-    if pre: result["tien_truoc_vat"] = _num(pre)
+    if pre: result["tien_truoc_vat"] = _num(pre, is_xml=True)
     vat = _findtext_any(root, ["TgTThue", "TotalVATAmount", "TongTienThue"])
-    if vat: result["vat"] = _num(vat)
+    if vat: result["vat"] = _num(vat, is_xml=True)
     tot = _findtext_any(root, ["TgTTTBSo", "TotalAmount", "TongTienThanhToan"])
-    if tot: result["tong_cong"] = _num(tot)
+    if tot: result["tong_cong"] = _num(tot, is_xml=True)
     mtc = _findtext_any(root, ["MCCQT", "MaTraCuu"])
     if mtc: result["ma_tra_cuu"] = mtc
+
+    ms = _findtext_any(root, ["KHMSHDon", "MauSo", "MauSoHD"])
+    if ms: result["mau_so_hd"] = ms
+    kh = _findtext_any(root, ["KHHDon", "KyHieu", "KyHieuHD"])
+    if kh: result["ky_hieu_hd"] = kh
 
     missing = [k for k in ("so_hd","ngay_hd","tien_truoc_vat","vat") if not result.get(k)]
     if missing:
@@ -116,6 +127,7 @@ def parse_pdf(path_or_bytes, filename=None):
         "so_hd": None, "ngay_hd": None,
         "mst_ban": None, "ten_ban": None,
         "tien_truoc_vat": None, "vat": None, "tong_cong": None,
+        "mau_so_hd": None, "ky_hieu_hd": None,
         "ma_tra_cuu": None, "parse_status": "OK",
     }
     try:
