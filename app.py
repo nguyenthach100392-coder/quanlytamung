@@ -825,14 +825,14 @@ def page_upload_lo():
                 
             try:
                 # Tim file Template.xlsx
-                template_path = "Template.xlsx"
-                if not os.path.exists(template_path):
-                    # Try going up a few directories in case it's in the root
-                    alt_path = os.path.join(os.path.dirname(__file__), "..", "..", "Template.xlsx")
-                    if os.path.exists(alt_path):
-                        template_path = alt_path
-                    else:
-                        template_path = "D:\\CLAUDE CODE\\hoa don tam ung\\Template.xlsx"
+                t1_paths = [
+                    "Template.xlsx",
+                    os.path.join(os.path.dirname(__file__), "Template.xlsx"),
+                    os.path.join(os.path.dirname(__file__), "..", "Template.xlsx"),
+                    os.path.join(os.getcwd(), "outputs", "Template.xlsx"),
+                    os.path.join(os.getcwd(), "Template.xlsx")
+                ]
+                template_path = next((p for p in t1_paths if os.path.exists(p)), "Template.xlsx")
                 
                 # Load template default
                 wb = openpyxl.load_workbook(template_path)
@@ -900,13 +900,14 @@ def page_upload_lo():
                 output.seek(0)
                 
                 # --- PROCESS SECOND EXCEL: BANG KE HOA DON ---
-                template_hd_path = "template_hoa_don.xlsx"
-                if not os.path.exists(template_hd_path):
-                    alt_path2 = os.path.join(os.path.dirname(__file__), "..", "template_hoa_don.xlsx")
-                    if os.path.exists(alt_path2):
-                        template_hd_path = alt_path2
-                    else:
-                        template_hd_path = "D:\\CLAUDE CODE\\hoa don tam ung\\outputs\\template_hoa_don.xlsx"
+                t2_paths = [
+                    "template_hoa_don.xlsx",
+                    os.path.join(os.path.dirname(__file__), "template_hoa_don.xlsx"),
+                    os.path.join(os.path.dirname(__file__), "..", "template_hoa_don.xlsx"),
+                    os.path.join(os.getcwd(), "outputs", "template_hoa_don.xlsx"),
+                    os.path.join(os.getcwd(), "template_hoa_don.xlsx")
+                ]
+                template_hd_path = next((p for p in t2_paths if os.path.exists(p)), None)
                 
                 if os.path.exists(template_hd_path):
                     wb2 = openpyxl.load_workbook(template_hd_path)
