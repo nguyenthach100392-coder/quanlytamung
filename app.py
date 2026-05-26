@@ -430,7 +430,7 @@ def page_hop_dong():
                     })
                 st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
                 
-                if role == "admin" and hstt_rows:
+                if role.lower() == "admin" and hstt_rows:
                     with st.expander("✏️ Chỉnh sửa / Xóa HSTT"):
                         edit_options = [f"Đợt {r['dot_so']} - {fmt_date(r['ngay_hstt'])}" for r in hstt_rows]
                         edit_choice = st.selectbox("Chọn Đợt HSTT cần sửa:", edit_options)
