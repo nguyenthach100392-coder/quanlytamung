@@ -141,10 +141,14 @@ def init_db():
             [
                 ("admin", "admin@123", "Quan tri he thong", "QTTD", "admin"),
                 ("qttd01", "qttd01@123", "Can bo QTTD 01", "QTTD", "qttd"),
-                ("phongkh_dn", "phongkh_dn@123", "Phong KHDN", "KHDN", "phong_kh"),
-                ("phongkh_sme", "phongkh_sme@123", "Phong KH SME", "SME", "phong_kh"),
             ]
         )
+        
+    # Xóa 2 user mặc định cũ không cần dùng nữa (để nó biến mất trên Web)
+    c.execute("DELETE FROM users WHERE username IN ('phongkh_dn', 'phongkh_sme')")
+    
+    # Fix dữ liệu cũ: lúc trước pct_khau_tru lưu dưới dạng thập phân (vd: 0.1), giờ đổi thành phần trăm (10.0)
+    c.execute("UPDATE hop_dong SET pct_khau_tru = pct_khau_tru * 100 WHERE pct_khau_tru < 1.0 AND pct_khau_tru > 0")
         
     # MIGRATIONS: Add new columns if they don't exist
     def add_col_if_not_exists(table, col_name, col_type):
@@ -354,6 +358,22 @@ def add_hstt(data, user):
         c.commit()
         log(c, "ADD_HSTT", "hstt", f"{data['ma_hop_dong']}/dot{data['dot_so']}", user, "")
 
+def update_hstt(hstt_id, data, user):
+    with get_conn() as c:
+        c.execute("""UPDATE hstt
+            SET dot_so=?, ngay_hstt=?, kl_truoc_vat=?, vat=?, tong_cong=?, ghi_chu=?, loai_kl=?
+            WHERE id=?""",
+            (data["dot_so"], data["ngay_hstt"], data["kl_truoc_vat"], data.get("vat", 0),
+             data.get("tong_cong", data["kl_truoc_vat"]), data.get("ghi_chu"), data.get("loai_kl", "Trước VAT"), hstt_id))
+        c.commit()
+        log(c, "UPDATE_HSTT", "hstt", str(hstt_id), user, "")
+
+def delete_hstt(hstt_id, user):
+    with get_conn() as c:
+        c.execute("DELETE FROM hstt WHERE id=?", (hstt_id,))
+        c.commit()
+        log(c, "DELETE_HSTT", "hstt", str(hstt_id), user, "")
+
 
 # ---- Hoa don ----
 def list_hoa_don(ma_hop_dong=None, dot=None, status=None):
@@ -467,10 +487,19 @@ def calc_summary(ma_hop_dong):
                 (pct, ma_hop_dong)
             ).fetchone()[0]
         
-        hd_luy_ke = c.execute(
-            "SELECT COALESCE(SUM(tien_truoc_vat),0) FROM hoa_don WHERE ma_hop_dong=? AND status='approved'",
-            (ma_hop_dong,)
-        ).fetchone()[0]
+        hd_pct = 1.0 if hd["loai_tu"] == "mot_lan" else pct
+        hd_loai_kt = "Trước VAT" if hd["loai_tu"] == "mot_lan" else loai_kt
+        
+        if hd_loai_kt == "Sau VAT":
+            hd_luy_ke = c.execute(
+                "SELECT COALESCE(SUM(COALESCE(tong_cong, tien_truoc_vat) * ?),0) FROM hoa_don WHERE ma_hop_dong=? AND status='approved'",
+                (hd_pct, ma_hop_dong)
+            ).fetchone()[0]
+        else:
+            hd_luy_ke = c.execute(
+                "SELECT COALESCE(SUM(tien_truoc_vat * ?),0) FROM hoa_don WHERE ma_hop_dong=? AND status='approved'",
+                (hd_pct, ma_hop_dong)
+            ).fetchone()[0]
         
         du = max(tong_giai_ngan - hd_luy_ke, 0)
         pct_done = hd_luy_ke / tong_giai_ngan if tong_giai_ngan > 0 else 0
