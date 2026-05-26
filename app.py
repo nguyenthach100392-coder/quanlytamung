@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta
 import os
 import io
 import openpyxl
+import copy
 import db
 import parsers
 import exporter
@@ -635,7 +636,7 @@ def page_hop_dong():
                         uploaded = h['uploaded_at'] if 'uploaded_at' in h.keys() else None
                         ngay_bs = fmt_date(str(uploaded).split(' ')[0]) if uploaded else '-'
                         st.write(f"**HD {h['so_hd']}** | Ngày HĐ: {fmt_date(h['ngay_hd'])} | Ngày BS: {ngay_bs} | Đợt: {h['dot_so']} | TT: {status_badge(h['status'])}")
-                        st.write(f"**Người bán:** {h['ten_ban'] or '-'} | Mã TC: `{h['ma_tra_cuu'] or '-'}`")
+                        st.write(f"**Người bán:** {h['ten_ban'] or '-'} | MST: `{h['mst_ban'] or '-'}`")
                         st.write(f"**Số tiền:** {fmt_vnd(h['tien_truoc_vat'])} | **VAT:** {fmt_vnd(h['vat'])} | **Tổng:** {fmt_vnd(h['tong_cong'])}")
                         st.markdown(f"Tương đương Giá trị thu hồi tạm ứng: **<span style='color:green;'>{fmt_vnd(can_tru)} VND</span>** *(Tính theo {pct*100:g}% của {loai_kt})*", unsafe_allow_html=True)
                         if h['file_src'] and os.path.exists(h['file_src']):
@@ -725,7 +726,7 @@ def page_duyet_hd():
         with st.container(border=True):
             c1, c2 = st.columns([3, 1])
             with c1:
-                st.write(f"**HD {h['so_hd']}** | Ngày: {fmt_date(h['ngay_hd'])} | Mã tra cứu: `{h['ma_tra_cuu'] or '-'}`")
+                st.write(f"**HD {h['so_hd']}** | Ngày: {fmt_date(h['ngay_hd'])} | MST: `{h['mst_ban'] or '-'}`")
                 st.write(f"**Người bán:** {h['ten_ban'] or '-'}")
                 st.write(f"**Số tiền:** {fmt_vnd(h['tien_truoc_vat'])} | **VAT:** {fmt_vnd(h['vat'])} | **Tổng:** {fmt_vnd(h['tong_cong'])}")
                 if h['file_src'] and os.path.exists(h['file_src']):
@@ -778,13 +779,18 @@ def page_upload_lo():
     st.write("### Chọn các hóa đơn để xuất Excel")
     
     selected_hds = []
+    
+    def toggle_select_all():
+        val = st.session_state.get(f"chk_select_all_{selected['ma_hop_dong']}", False)
+        for h in hoadons:
+            st.session_state[f"chk_export_{h['id']}"] = val
+            
     # Add a "Select All" checkbox
-    select_all = st.checkbox("Chọn tất cả", value=False)
+    st.checkbox("Chọn tất cả", key=f"chk_select_all_{selected['ma_hop_dong']}", on_change=toggle_select_all)
     
     for h in hoadons:
-        col1, col2, col3 = st.columns([1, 7, 2])
-        # Default value based on select_all
-        is_checked = col1.checkbox("Chọn", value=select_all, key=f"chk_export_{h['id']}")
+        col1, col2, col3 = st.columns([1, 7, 2], vertical_alignment="center")
+        is_checked = col1.checkbox("Chọn", key=f"chk_export_{h['id']}", label_visibility="collapsed")
         col2.write(f"**Số HĐ:** {h['so_hd']} | **Ngày:** {fmt_date(h['ngay_hd'])} | **ĐVTH:** {h['ten_ban']}")
         col3.write(f"**Tổng tiền:** {fmt_vnd(h['tong_cong'])}")
         if is_checked:
@@ -801,6 +807,11 @@ def page_upload_lo():
                         d_extra = parsers.parse_file(f)
                 
                 # Merge data: uu tien thong tin trong DB, nhung lay mau so/ky hieu tu XML
+                pct = 1.0 if selected["loai_tu"] == "mot_lan" else (selected["pct_khau_tru"] or 0) / 100.0
+                loai_kt = "Trước VAT" if selected["loai_tu"] == "mot_lan" else (selected["loai_gia_tri_kt"] or "Trước VAT")
+                gia_tri_tinh = h['tong_cong'] if loai_kt == "Sau VAT" else h['tien_truoc_vat']
+                can_tru = (gia_tri_tinh or 0) * pct
+                
                 parsed_data.append({
                     "so_hd": h["so_hd"],
                     "ngay_hd": h["ngay_hd"],
@@ -808,7 +819,8 @@ def page_upload_lo():
                     "ten_ban": h["ten_ban"],
                     "tong_cong": h["tong_cong"],
                     "mau_so_hd": d_extra.get("mau_so_hd"),
-                    "ky_hieu_hd": d_extra.get("ky_hieu_hd")
+                    "ky_hieu_hd": d_extra.get("ky_hieu_hd"),
+                    "can_tru": can_tru
                 })
                 
             try:
@@ -865,24 +877,102 @@ def page_upload_lo():
                     ws.cell(row=r, column=13, value="135")
                     # N: Ngày tháng năm giải ngân
                     ws.cell(row=r, column=14, value=fmt_date(ngay_gn_dau))
-                    # O: Số tiền giải ngân
-                    ws.cell(row=r, column=15, value=d.get("tong_cong") or 0)
+                    # O: Số tiền giải ngân (quy đổi VNĐ) - Giá trị thu hồi tạm ứng
+                    ws.cell(row=r, column=15, value=d.get("can_tru") or 0)
                     # P: Số tài khoản tiền vay -> Bỏ trống
                     ws.cell(row=r, column=16, value="")
                     # Q: Loại chứng từ
                     ws.cell(row=r, column=17, value="01HDDT")
                 
+                    for c in range(1, 18):
+                        source_cell = ws.cell(row=8, column=c)
+                        target_cell = ws.cell(row=r, column=c)
+                        if source_cell.has_style:
+                            target_cell.font = copy.copy(source_cell.font)
+                            target_cell.border = copy.copy(source_cell.border)
+                            target_cell.fill = copy.copy(source_cell.fill)
+                            target_cell.number_format = source_cell.number_format
+                            target_cell.protection = copy.copy(source_cell.protection)
+                            target_cell.alignment = copy.copy(source_cell.alignment)
+                
                 output = io.BytesIO()
                 wb.save(output)
                 output.seek(0)
                 
+                # --- PROCESS SECOND EXCEL: BANG KE HOA DON ---
+                template_hd_path = "template_hoa_don.xlsx"
+                if not os.path.exists(template_hd_path):
+                    alt_path2 = os.path.join(os.path.dirname(__file__), "..", "template_hoa_don.xlsx")
+                    if os.path.exists(alt_path2):
+                        template_hd_path = alt_path2
+                    else:
+                        template_hd_path = "D:\\CLAUDE CODE\\hoa don tam ung\\outputs\\template_hoa_don.xlsx"
+                
+                if os.path.exists(template_hd_path):
+                    wb2 = openpyxl.load_workbook(template_hd_path)
+                    ws2 = wb2.active
+                    
+                    start_row2 = 2
+                    for i, d in enumerate(parsed_data):
+                        r = start_row2 + i
+                        # 1: STT
+                        ws2.cell(row=r, column=1, value=i+1)
+                        # 2: Số HĐ
+                        ws2.cell(row=r, column=2, value=d.get("so_hd") or "")
+                        # 3: Ký hiệu
+                        ws2.cell(row=r, column=3, value=d.get("ky_hieu_hd") or "")
+                        # 4: Ngày HĐ
+                        ngay = d.get("ngay_hd")
+                        if isinstance(ngay, str):
+                            try: ngay = datetime.strptime(ngay, "%Y-%m-%d").date()
+                            except: pass
+                        ws2.cell(row=r, column=4, value=ngay.strftime("%d/%m/%Y") if isinstance(ngay, date) else str(ngay))
+                        # 5: Số tiền HĐ (VNĐ)
+                        ws2.cell(row=r, column=5, value=d.get("tong_cong") or 0)
+                        # 6: Tên đơn vị phát hành
+                        ws2.cell(row=r, column=6, value=d.get("ten_ban") or "")
+                        # 7: MST
+                        ws2.cell(row=r, column=7, value=d.get("mst_ban") or "")
+                        
+                        if r > start_row2:
+                            for c in range(1, 8):
+                                source_cell = ws2.cell(row=start_row2, column=c)
+                                target_cell = ws2.cell(row=r, column=c)
+                                if source_cell.has_style:
+                                    target_cell.font = copy.copy(source_cell.font)
+                                    target_cell.border = copy.copy(source_cell.border)
+                                    target_cell.fill = copy.copy(source_cell.fill)
+                                    target_cell.number_format = source_cell.number_format
+                                    target_cell.protection = copy.copy(source_cell.protection)
+                                    target_cell.alignment = copy.copy(source_cell.alignment)
+                    
+                    output2 = io.BytesIO()
+                    wb2.save(output2)
+                    output2.seek(0)
+                else:
+                    output2 = None
+                
                 st.success(f"✅ Đã xử lý {len(parsed_data)} hóa đơn thành công!")
-                st.download_button(
-                    label="Tải file Excel kết quả",
+                
+                col_btn1, col_btn2 = st.columns(2)
+                col_btn1.download_button(
+                    label="📥 Tải file Upload Lô",
                     data=output,
                     file_name=f"UploadLo_{selected['ma_hop_dong']}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
                 )
+                
+                if output2:
+                    col_btn2.download_button(
+                        label="📥 Tải Bảng kê Hóa đơn",
+                        data=output2,
+                        file_name=f"BangKeHD_{selected['ma_hop_dong']}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+                else:
+                    col_btn2.warning("Không tìm thấy mẫu Bảng kê hóa đơn.")
             except Exception as e:
                 st.error(f"Lỗi khi xử lý Template Excel: {e}")
 
