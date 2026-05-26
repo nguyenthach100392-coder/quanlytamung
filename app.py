@@ -429,6 +429,50 @@ def page_hop_dong():
                         "Ghi chú": r["ghi_chu"] or "",
                     })
                 st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
+                
+                if role == "admin" and hstt_rows:
+                    with st.expander("✏️ Chỉnh sửa / Xóa HSTT"):
+                        edit_options = [f"Đợt {r['dot_so']} - {fmt_date(r['ngay_hstt'])}" for r in hstt_rows]
+                        edit_choice = st.selectbox("Chọn Đợt HSTT cần sửa:", edit_options)
+                        idx = edit_options.index(edit_choice)
+                        edit_r = hstt_rows[idx]
+                        
+                        with st.form(f"edit_hstt_form_{selected['ma_hop_dong']}"):
+                            c1, c2 = st.columns(2)
+                            ed_dot = c1.number_input("Sửa Đợt #", min_value=1, value=edit_r["dot_so"])
+                            
+                            ed_ngay_str = edit_r["ngay_hstt"]
+                            try:
+                                if isinstance(ed_ngay_str, str): ed_ngay_dt = datetime.strptime(ed_ngay_str, "%Y-%m-%d").date()
+                                else: ed_ngay_dt = ed_ngay_str
+                            except: ed_ngay_dt = date.today()
+                            
+                            ed_ngay = c2.date_input("Sửa Ngày HSTT", value=ed_ngay_dt, format="DD/MM/YYYY")
+                            
+                            c1, c2 = st.columns(2)
+                            ed_kl_text = c1.text_input("KL trước VAT (VND) *", value=f"{int(edit_r['kl_truoc_vat']):,}".replace(",", "."))
+                            ed_vat_val = edit_r['vat'] if edit_r['vat'] is not None else 0
+                            ed_vat_text = c2.text_input("VAT (VND)", value=f"{int(ed_vat_val):,}".replace(",", "."))
+                            ed_ghi_chu = st.text_input("Ghi chú", value=edit_r["ghi_chu"] or "")
+                            
+                            col1, col2 = st.columns(2)
+                            if col1.form_submit_button("💾 Lưu thay đổi", type="primary", use_container_width=True):
+                                ed_kl = parse_vnd_input(ed_kl_text)
+                                ed_vat = parse_vnd_input(ed_vat_text) or 0
+                                if not ed_kl or ed_kl <= 0:
+                                    st.error("Nhập KL hợp lệ!")
+                                else:
+                                    db.update_hstt(edit_r["id"], {
+                                        "dot_so": int(ed_dot), "ngay_hstt": ed_ngay,
+                                        "kl_truoc_vat": ed_kl, "vat": ed_vat,
+                                        "tong_cong": ed_kl + ed_vat, "ghi_chu": ed_ghi_chu
+                                    }, user)
+                                    st.success("Đã cập nhật!")
+                                    st.rerun()
+                            if col2.form_submit_button("❌ Xóa đợt này", use_container_width=True):
+                                db.delete_hstt(edit_r["id"], user)
+                                st.success("Đã xóa!")
+                                st.rerun()
             else:
                 st.info("Chưa có HSTT nào.")
 
@@ -578,13 +622,22 @@ def page_hop_dong():
     with tabs[2 + tab_offset]:
         hd_list = db.list_hoa_don(ma_hop_dong=selected["ma_hop_dong"])
         if hd_list:
+            pct = 1.0 if selected["loai_tu"] == "mot_lan" else (selected["pct_khau_tru"] or 0) / 100.0
+            loai_kt = "Trước VAT" if selected["loai_tu"] == "mot_lan" else (selected["loai_gia_tri_kt"] or "Trước VAT")
+            
             for h in hd_list:
+                gia_tri_tinh = h['tong_cong'] if loai_kt == "Sau VAT" else h['tien_truoc_vat']
+                can_tru = (gia_tri_tinh or 0) * pct
+                
                 with st.container(border=True):
                     c1, c2 = st.columns([3, 1])
                     with c1:
-                        st.write(f"**HD {h['so_hd']}** | Ngày: {fmt_date(h['ngay_hd'])} | Đợt: {h['dot_so']} | TT: {status_badge(h['status'])}")
+                        uploaded = h['uploaded_at'] if 'uploaded_at' in h.keys() else None
+                        ngay_bs = fmt_date(str(uploaded).split(' ')[0]) if uploaded else '-'
+                        st.write(f"**HD {h['so_hd']}** | Ngày HĐ: {fmt_date(h['ngay_hd'])} | Ngày BS: {ngay_bs} | Đợt: {h['dot_so']} | TT: {status_badge(h['status'])}")
                         st.write(f"**Người bán:** {h['ten_ban'] or '-'} | Mã TC: `{h['ma_tra_cuu'] or '-'}`")
                         st.write(f"**Số tiền:** {fmt_vnd(h['tien_truoc_vat'])} | **VAT:** {fmt_vnd(h['vat'])} | **Tổng:** {fmt_vnd(h['tong_cong'])}")
+                        st.markdown(f"Tương đương Giá trị thu hồi tạm ứng: **<span style='color:green;'>{fmt_vnd(can_tru)} VND</span>** *(Tính theo {pct*100:g}% của {loai_kt})*", unsafe_allow_html=True)
                         if h['file_src'] and os.path.exists(h['file_src']):
                             with open(h['file_src'], "rb") as f:
                                 st.download_button("📥 Tải file đính kèm", f, file_name=os.path.basename(h['file_src']), key=f"dl_hd_{h['id']}")
@@ -773,8 +826,8 @@ def page_upload_lo():
                 wb = openpyxl.load_workbook(template_path)
                 ws = wb.active
                 
-                # Copy F col from template (row 7)
-                val_f = ws.cell(row=7, column=6).value
+                # Copy F col from template (row 8) - vi row 7 la header "(6)"
+                val_f = ws.cell(row=8, column=6).value
                 
                 # Write from row 8
                 start_row = 8
