@@ -808,7 +808,45 @@ def page_import_excel():
     df_template = pd.DataFrame(columns=cols)
     
     towrite = io.BytesIO()
-    df_template.to_excel(towrite, index=False, engine='openpyxl')
+    with pd.ExcelWriter(towrite, engine='openpyxl') as writer:
+        df_template.to_excel(writer, index=False, sheet_name='Template')
+        workbook = writer.book
+        worksheet = writer.sheets['Template']
+        
+        from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+        
+        # Define styles
+        header_fill_req = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid") # Red for required
+        header_fill_opt = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid") # Blue for optional
+        header_font = Font(color="FFFFFF", bold=True, size=11)
+        header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+        
+        # Apply styles to headers
+        for col_num, cell in enumerate(worksheet[1], 1):
+            if "(Bắt buộc)" in str(cell.value):
+                cell.fill = header_fill_req
+            else:
+                cell.fill = header_fill_opt
+            cell.font = header_font
+            cell.alignment = header_alignment
+            cell.border = thin_border
+            
+            # Auto adjust column width
+            col_letter = cell.column_letter
+            if "Ngày" in str(cell.value) or "Giá trị" in str(cell.value) or "Số tiền" in str(cell.value):
+                worksheet.column_dimensions[col_letter].width = 20
+            else:
+                worksheet.column_dimensions[col_letter].width = 25
+                
+        worksheet.row_dimensions[1].height = 45
+        
+        # Format columns as Text by default to avoid scientific notation on CIF/So HD
+        for col in worksheet.columns:
+            for cell in col[1:100]: # apply to first 100 rows for template
+                cell.alignment = Alignment(vertical="center", wrap_text=True)
+                cell.border = thin_border
+                
     towrite.seek(0)
     
     st.download_button(
