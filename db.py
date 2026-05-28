@@ -141,16 +141,30 @@ def generate_ma_hop_dong(khach_hang, year=None):
     if year is None: year = date.today().year
     company_seq = get_or_create_company_seq(khach_hang, year)
     with get_conn() as c:
-        count = c.execute("SELECT COUNT(*) FROM hop_dong WHERE ma_hop_dong LIKE ?", (f"HD-{year}-{company_seq:03d}.%",)).fetchone()[0]
-        return f"HD-{year}-{company_seq:03d}.{count+1:02d}"
+        prefix = f"HD-{year}-{company_seq:03d}."
+        rows = c.execute("SELECT ma_hop_dong FROM hop_dong WHERE ma_hop_dong LIKE ?", (f"{prefix}%",)).fetchall()
+        max_idx = 0
+        for r in rows:
+            try:
+                idx = int(r.get("ma_hop_dong").split(".")[-1])
+                if idx > max_idx: max_idx = idx
+            except: pass
+        return f"{prefix}{max_idx+1:02d}"
+
 
 def generate_ma_giai_ngan(khach_hang, year=None):
     if year is None: year = date.today().year
     company_seq = get_or_create_company_seq(khach_hang, year)
     with get_conn() as c:
-        count = c.execute("SELECT COUNT(*) FROM tam_ung WHERE ma_giai_ngan LIKE ?", (f"TU-{year}-{company_seq:03d}.%",)).fetchone()[0]
-        return f"TU-{year}-{company_seq:03d}.{count+1:02d}"
-
+        prefix = f"TU-{year}-{company_seq:03d}."
+        rows = c.execute("SELECT ma_giai_ngan FROM tam_ung WHERE ma_giai_ngan LIKE ?", (f"{prefix}%",)).fetchall()
+        max_idx = 0
+        for r in rows:
+            try:
+                idx = int(r.get("ma_giai_ngan").split(".")[-1])
+                if idx > max_idx: max_idx = idx
+            except: pass
+        return f"{prefix}{max_idx+1:02d}"
 
 # ---- Users ----
 def list_users():
