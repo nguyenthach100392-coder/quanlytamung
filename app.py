@@ -105,6 +105,28 @@ def fmt_vnd_dot(x):
     except: return str(x)
 
 
+from datetime import datetime, date
+import pandas as pd
+
+def parse_date(val):
+    if pd.isna(val) or val == "":
+        return None
+    if isinstance(val, (datetime, pd.Timestamp)):
+        return val.date()
+    elif isinstance(val, date):
+        return val
+    
+    val_str = str(val).strip()
+    if not val_str:
+        return None
+        
+    for fmt in ["%d/%m/%Y", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]:
+        try:
+            return datetime.strptime(val_str, fmt).date()
+        except ValueError:
+            pass
+    return None
+
 def parse_vnd_input(text):
     """Parse VND input: '500000000' hoac '500.000.000' -> float"""
     if not text: return None
@@ -798,6 +820,7 @@ def page_import_excel():
         "Ngày Hợp đồng (DD/MM/YYYY)",
         "Giá trị HĐ (VND)",
         "Ngày kết thúc HĐ (DD/MM/YYYY)",
+        "Loại thanh toán",
         "Tỷ lệ Khấu trừ (%)",
         "Phòng phụ trách",
         "Khế ước vay",
@@ -813,8 +836,9 @@ def page_import_excel():
         "Ngày Hợp đồng (DD/MM/YYYY)": "01/01/2024",
         "Giá trị HĐ (VND)": 1000000000,
         "Ngày kết thúc HĐ (DD/MM/YYYY)": "31/12/2024",
+        "Loại thanh toán": "Khấu trừ từng đợt",
         "Tỷ lệ Khấu trừ (%)": 10,
-        "Phòng phụ trách": "QTTD 01",
+        "Phòng phụ trách": "KHDN1",
         "Khế ước vay": "KUV-01",
         "Số tiền Giải ngân đợt 1 (VND)": 50000000,
         "Ngày giải ngân (DD/MM/YYYY)": "05/01/2024",
@@ -828,6 +852,7 @@ def page_import_excel():
         worksheet = writer.sheets['Template']
         
         from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+        from openpyxl.worksheet.datavalidation import DataValidation
         
         # Define styles
         header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid") # Professional Blue for all headers
@@ -837,6 +862,18 @@ def page_import_excel():
         
         sample_font = Font(italic=True, color="595959")
         sample_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+        
+        # Data Validations
+        dv_phong = DataValidation(type="list", formula1='"PGD Hàng Xanh,PGD Đinh Tiên Hoàng,PGD Dakao,PGD Nguyễn Oanh,PGD Tân Thới Hiệp,KHDN1,KHDN2,KH FDI"', allow_blank=True)
+        worksheet.add_data_validation(dv_phong)
+        
+        dv_loai_tt = DataValidation(type="list", formula1='"Khấu trừ từng đợt,Thanh toán 1 lần"', allow_blank=True)
+        worksheet.add_data_validation(dv_loai_tt)
+        
+        dv_date = DataValidation(type="date", operator="greaterThan", formula1="DATE(2000,1,1)", allow_blank=True)
+        dv_date.error = 'Vui lòng nhập ngày tháng hợp lệ (VD: 01/01/2024)'
+        dv_date.errorTitle = 'Lỗi định dạng ngày'
+        worksheet.add_data_validation(dv_date)
         
         # Apply styles to headers
         for col_num, cell in enumerate(worksheet[1], 1):
@@ -857,7 +894,7 @@ def page_import_excel():
         # Format columns as Text by default to avoid scientific notation on CIF/So HD
         for col in worksheet.columns:
             header_value = col[0].value
-            for row_idx, cell in enumerate(col[1:100], start=2): # apply to first 100 rows for template
+            for row_idx, cell in enumerate(col[1:200], start=2): # apply to first 200 rows for template
                 cell.border = thin_border
                 
                 if row_idx == 2:
@@ -870,6 +907,13 @@ def page_import_excel():
                     cell.alignment = Alignment(horizontal="right", vertical="center", wrap_text=True)
                 elif "Ngày" in str(header_value):
                     cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                    dv_date.add(cell)
+                elif "Phòng phụ trách" in str(header_value):
+                    cell.alignment = Alignment(vertical="center", wrap_text=True)
+                    dv_phong.add(cell)
+                elif "Loại thanh toán" in str(header_value):
+                    cell.alignment = Alignment(vertical="center", wrap_text=True)
+                    dv_loai_tt.add(cell)
                 else:
                     cell.number_format = '@' # Force Text format
                     cell.alignment = Alignment(vertical="center", wrap_text=True)
@@ -908,56 +952,49 @@ def page_import_excel():
                 
                 for idx, row in df.iterrows():
                     try:
-                        kh = str(row.get("Khách hàng (Bắt buộc)", "")).strip()
+                        kh = str(row.get("Khách hàng", "")).strip()
                         if not kh:
                             failed += 1
                             errors.append(f"Dòng {idx+2}: Thiếu tên Khách hàng.")
                             continue
                             
-                        tien_tu_str = str(row.get("Số tiền Giải ngân đợt 1 (VND) (Bắt buộc)", "")).strip()
+                        tien_tu_str = str(row.get("Số tiền Giải ngân đợt 1 (VND)", "")).strip()
                         tien_tu = parse_vnd_input(tien_tu_str)
                         if not tien_tu:
                             failed += 1
                             errors.append(f"Dòng {idx+2}: Thiếu/sai định dạng Số tiền giải ngân.")
                             continue
                             
-                        tlkt_str = str(row.get("Tỷ lệ Khấu trừ (%) (Bắt buộc)", "")).strip()
-                        if not tlkt_str:
-                            failed += 1
-                            errors.append(f"Dòng {idx+2}: Thiếu Tỷ lệ khấu trừ.")
-                            continue
-                        try:
-                            tlkt = float(tlkt_str.replace("%","").replace(",","."))
-                        except:
-                            failed += 1
-                            errors.append(f"Dòng {idx+2}: Sai định dạng Tỷ lệ khấu trừ.")
-                            continue
+                        loai_tt_str = str(row.get("Loại thanh toán", "")).strip()
+                        tlkt_str = str(row.get("Tỷ lệ Khấu trừ (%)", "")).strip()
+                        
+                        if loai_tt_str == "Thanh toán 1 lần":
+                            tlkt = 100.0
+                        else:
+                            if not tlkt_str:
+                                failed += 1
+                                errors.append(f"Dòng {idx+2}: Thiếu Tỷ lệ khấu trừ (bắt buộc với Khấu trừ từng đợt).")
+                                continue
+                            try:
+                                tlkt = float(tlkt_str.replace("%","").replace(",","."))
+                            except:
+                                failed += 1
+                                errors.append(f"Dòng {idx+2}: Sai định dạng Tỷ lệ khấu trừ.")
+                                continue
                             
-                        ngay_kt_str = str(row.get("Ngày kết thúc HĐ (DD/MM/YYYY) (Bắt buộc)", "")).strip()
-                        ngay_kt = None
-                        try:
-                            if ngay_kt_str: ngay_kt = datetime.strptime(ngay_kt_str, "%d/%m/%Y").date()
-                        except: pass
+                        ngay_kt = parse_date(row.get("Ngày kết thúc HĐ (DD/MM/YYYY)"))
                         if not ngay_kt:
                             failed += 1
                             errors.append(f"Dòng {idx+2}: Thiếu/sai định dạng Ngày kết thúc HĐ.")
                             continue
                             
-                        ngay_gn_str = str(row.get("Ngày giải ngân (DD/MM/YYYY) (Bắt buộc)", "")).strip()
-                        ngay_gn = None
-                        try:
-                            if ngay_gn_str: ngay_gn = datetime.strptime(ngay_gn_str, "%d/%m/%Y").date()
-                        except: pass
+                        ngay_gn = parse_date(row.get("Ngày giải ngân (DD/MM/YYYY)"))
                         if not ngay_gn:
                             failed += 1
                             errors.append(f"Dòng {idx+2}: Thiếu/sai định dạng Ngày giải ngân.")
                             continue
                             
-                        ngay_hd_str = str(row.get("Ngày Hợp đồng (DD/MM/YYYY)", "")).strip()
-                        ngay_hd = None
-                        try:
-                            if ngay_hd_str: ngay_hd = datetime.strptime(ngay_hd_str, "%d/%m/%Y").date()
-                        except: pass
+                        ngay_hd = parse_date(row.get("Ngày Hợp đồng (DD/MM/YYYY)"))
                             
                         # Tao ma HD
                         ma_hd = db.generate_ma_hop_dong(kh)
@@ -970,7 +1007,7 @@ def page_import_excel():
                             "gia_tri_hd": parse_vnd_input(row.get("Giá trị HĐ (VND)", "")) or None,
                             "ngay_hop_dong": ngay_hd,
                             "ngay_ket_thuc_hd": ngay_kt,
-                            "loai_tu": "khau_tru_dot", # default
+                            "loai_tu": "mot_lan" if str(row.get("Loại thanh toán", "")).strip() == "Thanh toán 1 lần" else "khau_tru_dot",
                             "loai_gia_tri_kt": None,
                             "pct_khau_tru": tlkt,
                             "phong_phu_trach": str(row.get("Phòng phụ trách", "")).strip() or "Khác",
