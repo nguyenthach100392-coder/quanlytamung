@@ -22,6 +22,30 @@ def get_conn():
 
 def init_db():
     with get_conn() as c:
+        # Patch tam_ung schema if it has khach_hang
+        try:
+            c.execute("SELECT khach_hang FROM tam_ung LIMIT 1")
+            has_khach_hang = True
+        except Exception:
+            has_khach_hang = False
+            
+        if has_khach_hang:
+            c.execute("ALTER TABLE tam_ung RENAME TO tam_ung_old")
+            c.execute("""CREATE TABLE tam_ung (
+                ma_giai_ngan TEXT PRIMARY KEY,
+                ma_hop_dong TEXT,
+                so_tien_tu DOUBLE PRECISION NOT NULL,
+                ngay_giai_ngan DATE NOT NULL,
+                ghi_chu TEXT,
+                created_by TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (ma_hop_dong) REFERENCES hop_dong(ma_hop_dong) ON DELETE CASCADE
+            )""")
+            try:
+                c.execute("INSERT INTO tam_ung (ma_giai_ngan, ma_hop_dong, so_tien_tu, ngay_giai_ngan, ghi_chu, created_by, created_at) SELECT ma_giai_ngan, ma_giai_ngan, so_tien_tu, ngay_giai_ngan, ghi_chu, created_by, created_at FROM tam_ung_old")
+            except Exception as e:
+                pass
+
         try:
             c.execute("SELECT phong_phu_trach FROM hop_dong LIMIT 1")
         except sqlite3.OperationalError:
