@@ -182,9 +182,9 @@ def page_dashboard():
     hd_list = db.list_hop_dong(phong=phong)
 
     # --- Filters ---
-    kh_list = sorted(list(set([r["khach_hang"] for r in hd_list if r["khach_hang"]])))
-    dvth_list = sorted(list(set([r["don_vi_thu_huong"] for r in hd_list if r["don_vi_thu_huong"]])))
-    phong_list = sorted(list(set([r["phong_phu_trach"] for r in hd_list if r["phong_phu_trach"]])))
+    kh_list = sorted(list(set([r.get("khach_hang") for r in hd_list if r.get("khach_hang")])))
+    dvth_list = sorted(list(set([r.get("don_vi_thu_huong") for r in hd_list if r.get("don_vi_thu_huong")])))
+    phong_list = sorted(list(set([r.get("phong_phu_trach") for r in hd_list if r.get("phong_phu_trach")])))
     
     with st.expander("🔍 Lọc dữ liệu", expanded=False):
         c1, c2 = st.columns(2)
@@ -197,11 +197,11 @@ def page_dashboard():
             phong_filters = []
         
     if kh_filters:
-        hd_list = [r for r in hd_list if r["khach_hang"] in kh_filters]
+        hd_list = [r for r in hd_list if r.get("khach_hang") in kh_filters]
     if dvth_filters:
-        hd_list = [r for r in hd_list if r["don_vi_thu_huong"] in dvth_filters]
+        hd_list = [r for r in hd_list if r.get("don_vi_thu_huong") in dvth_filters]
     if phong_filters:
-        hd_list = [r for r in hd_list if r["phong_phu_trach"] in phong_filters]
+        hd_list = [r for r in hd_list if r.get("phong_phu_trach") in phong_filters]
 
     total_gn = 0
     total_hd = 0
