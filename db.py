@@ -341,8 +341,8 @@ def calc_summary(ma_hop_dong):
                 (pct, ma_hop_dong)
             ).fetchone()[0]
         
-        hd_pct = 1.0 if hd.get("loai_tu") == "mot_lan" else pct
-        hd_loai_kt = "Trước VAT" if hd.get("loai_tu") == "mot_lan" else loai_kt
+        hd_pct = 1.0 if hd["loai_tu"] == "mot_lan" else pct
+        hd_loai_kt = "Trước VAT" if hd["loai_tu"] == "mot_lan" else loai_kt
         
         if hd_loai_kt == "Sau VAT":
             hd_luy_ke = c.execute(

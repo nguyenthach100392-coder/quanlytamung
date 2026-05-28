@@ -161,7 +161,7 @@ def compute_hd_status(r):
     # Hạn bổ sung HĐ = Ngày kết thúc HĐ + 30 ngày (theo CV 4483)
     han_bo_sung = nkt + timedelta(days=30)
     
-    if summary.get("tong_giai_ngan") == 0:
+    if summary["tong_giai_ngan"] == 0:
         tt = "Chưa giải ngân"
     elif summary.get("hd_luy_ke") >= summary.get("tong_giai_ngan"): 
         tt = "Hoàn tất"
@@ -169,9 +169,9 @@ def compute_hd_status(r):
     elif (han_bo_sung - today).days <= 15: tt = "Sắp đến hạn"
     else: tt = "Đang theo dõi"
     
-    summary.get("han_cuoi") = han_bo_sung
+    summary["han_cuoi"] = han_bo_sung
     # Tạm ứng còn lại = Tổng GN - Tổng khấu trừ HSTT
-    summary.get("tam_ung_con_lai") = max(summary.get("tong_giai_ngan") - summary.get("khau_tru_luy_ke"), 0)
+    summary["tam_ung_con_lai"] = max(summary.get("tong_giai_ngan") - summary.get("khau_tru_luy_ke"), 0)
     return summary, tt
 
 
@@ -241,8 +241,8 @@ def page_dashboard():
     c3.metric("🟢 Hoàn tất", hoan_tat)
 
     # --- Cảnh báo quá hạn / sắp hạn ---
-    alerts_qh = [r for r in rows_display if r.get("Trạng thái") == "Quá hạn"]
-    alerts_sh = [r for r in rows_display if r.get("Trạng thái") == "Sắp đến hạn"]
+    alerts_qh = [r for r in rows_display if r["Trạng thái"] == "Quá hạn"]
+    alerts_sh = [r for r in rows_display if r["Trạng thái"] == "Sắp đến hạn"]
     if alerts_qh:
         with st.expander(f"🚨 Cảnh báo: Có {len(alerts_qh)} Hợp đồng QUÁ HẠN bổ sung hóa đơn", expanded=False):
             for a in alerts_qh:
@@ -332,7 +332,7 @@ def page_hop_dong():
     with tabs[0]:
         c_title, c_btn = st.columns([4, 1])
         c_title.markdown("#### Thông tin Hợp đồng")
-        if uinfo.get("role") == "admin":
+        if uinfo["role"] == "admin":
             if c_btn.button("🗑️ Xóa Hợp đồng này", type="primary"):
                 db.delete_hop_dong(selected.get('ma_hop_dong'), user)
                 st.rerun()
@@ -553,15 +553,15 @@ def page_hop_dong():
                 
                 f.seek(0)
                 d = parsers.parse_file(f)
-                d.get("ma_hop_dong") = selected.get("ma_hop_dong")
-                d.get("dot_so") = int(dot_sel)
-                d.get("file_src") = file_path
+                d["ma_hop_dong"] = selected.get("ma_hop_dong")
+                d["dot_so"] = int(dot_sel)
+                d["file_src"] = file_path
                 db.add_staging(d, user)
                 ok += 1
             st.success(f"Đã trích xuất {ok} file. Vui lòng Xác nhận bên dưới!")
             st.rerun()
 
-        stagings = [s for s in db.list_staging(user=user if is_phong_kh else None) if s.get("ma_hop_dong") == selected.get("ma_hop_dong")]
+        stagings = [s for s in db.list_staging(user=user if is_phong_kh else None) if s["ma_hop_dong"] == selected.get("ma_hop_dong")]
         if stagings:
             st.markdown("##### 📝 Hóa đơn chờ xác nhận")
             for s in stagings:
@@ -642,8 +642,8 @@ def page_hop_dong():
     with tabs[2 + tab_offset]:
         hd_list = db.list_hoa_don(ma_hop_dong=selected.get("ma_hop_dong"))
         if hd_list:
-            pct = 1.0 if selected.get("loai_tu") == "mot_lan" else (selected.get("pct_khau_tru") or 0) / 100.0
-            loai_kt = "Trước VAT" if selected.get("loai_tu") == "mot_lan" else (selected.get("loai_gia_tri_kt") or "Trước VAT")
+            pct = 1.0 if selected["loai_tu"] == "mot_lan" else (selected.get("pct_khau_tru") or 0) / 100.0
+            loai_kt = "Trước VAT" if selected["loai_tu"] == "mot_lan" else (selected.get("loai_gia_tri_kt") or "Trước VAT")
             
             for h in hd_list:
                 gia_tri_tinh = h.get('tong_cong') if loai_kt == "Sau VAT" else h.get('tien_truoc_vat')
@@ -1033,8 +1033,8 @@ def page_upload_lo():
                 contract = db.get_hop_dong(h.get('ma_hop_dong'))
                 if not contract: continue
                 
-                pct = 1.0 if contract.get("loai_tu") == "mot_lan" else (contract.get("pct_khau_tru") or 0) / 100.0
-                loai_kt = "Trước VAT" if contract.get("loai_tu") == "mot_lan" else (contract.get("loai_gia_tri_kt") or "Trước VAT")
+                pct = 1.0 if contract["loai_tu"] == "mot_lan" else (contract.get("pct_khau_tru") or 0) / 100.0
+                loai_kt = "Trước VAT" if contract["loai_tu"] == "mot_lan" else (contract.get("loai_gia_tri_kt") or "Trước VAT")
                 gia_tri_tinh = h.get('tong_cong') if loai_kt == "Sau VAT" else h.get('tien_truoc_vat')
                 can_tru = (gia_tri_tinh or 0) * pct
                 
