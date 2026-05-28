@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """SQLite database layer cho he thong theo doi tam ung (Quan ly theo Hop Dong)."""
-import psycopg2
-import psycopg2.extras
+import sqlite3
 import os
 import re
 from datetime import datetime, date
@@ -9,31 +8,105 @@ import streamlit as st
 
 DB_PATH = "tamung.db"
 
-
-SUPABASE_URL = "postgresql://postgres.wtuomrtntyqchixeqxrp:%21Thach1003%21@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"
+def dict_factory(cursor, row):
+    d = {}
+    for idx, col in enumerate(cursor.description):
+        d[col[0]] = row[idx]
+        d[idx] = row[idx]
+    return d
 
 def get_conn():
-    conn = psycopg2.connect(SUPABASE_URL)
-    conn.autocommit = False # We manage commits manually as before
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = dict_factory
     return conn
 
-# Helper class to support `with get_conn() as c:` returning a DictCursor
-import contextlib
-@contextlib.contextmanager
-def get_conn():
-    conn = psycopg2.connect(SUPABASE_URL)
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            yield cur
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-
 def init_db():
-    pass
+    with get_conn() as c:
+        # Patch tam_ung schema if it has khach_hang
+        try:
+            c.execute("SELECT khach_hang FROM tam_ung LIMIT 1")
+            has_khach_hang = True
+        except Exception:
+            has_khach_hang = False
+            
+        if has_khach_hang:
+            c.execute("ALTER TABLE tam_ung RENAME TO tam_ung_old")
+            c.execute("""CREATE TABLE tam_ung (
+                ma_giai_ngan TEXT PRIMARY KEY,
+                ma_hop_dong TEXT,
+                so_tien_tu DOUBLE PRECISION NOT NULL,
+                ngay_giai_ngan DATE NOT NULL,
+                ghi_chu TEXT,
+                created_by TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (ma_hop_dong) REFERENCES hop_dong(ma_hop_dong) ON DELETE CASCADE
+            )""")
+            try:
+                c.execute("INSERT INTO tam_ung (ma_giai_ngan, ma_hop_dong, so_tien_tu, ngay_giai_ngan, ghi_chu, created_by, created_at) SELECT ma_giai_ngan, ma_giai_ngan, so_tien_tu, ngay_giai_ngan, ghi_chu, created_by, created_at FROM tam_ung_old")
+            except Exception as e:
+                pass
+
+        try:
+            c.execute("SELECT phong_phu_trach FROM hop_dong LIMIT 1")
+        except sqlite3.OperationalError:
+            c.execute("ALTER TABLE hop_dong ADD COLUMN phong_phu_trach TEXT")
+            
+        try:
+            c.execute("SELECT loai_tu FROM hop_dong LIMIT 1")
+        except sqlite3.OperationalError:
+            c.execute("ALTER TABLE hop_dong ADD COLUMN loai_tu TEXT NOT NULL DEFAULT 'khau_tru_dot'")
+            
+        try:
+            c.execute("SELECT loai_gia_tri_kt FROM hop_dong LIMIT 1")
+        except sqlite3.OperationalError:
+            c.execute("ALTER TABLE hop_dong ADD COLUMN loai_gia_tri_kt TEXT")
+            
+        try:
+            c.execute("SELECT pct_khau_tru FROM hop_dong LIMIT 1")
+        except sqlite3.OperationalError:
+            c.execute("ALTER TABLE hop_dong ADD COLUMN pct_khau_tru DOUBLE PRECISION DEFAULT 10.0")
+            
+        try:
+            c.execute("SELECT cif FROM hop_dong LIMIT 1")
+        except sqlite3.OperationalError:
+            c.execute("ALTER TABLE hop_dong ADD COLUMN cif TEXT")
+            
+        try:
+            c.execute("SELECT khe_uoc_vay FROM hop_dong LIMIT 1")
+        except sqlite3.OperationalError:
+            c.execute("ALTER TABLE hop_dong ADD COLUMN khe_uoc_vay TEXT")
+            
+        try:
+            c.execute("SELECT ngay_hop_dong FROM hop_dong LIMIT 1")
+        except sqlite3.OperationalError:
+            c.execute("ALTER TABLE hop_dong ADD COLUMN ngay_hop_dong DATE")
+
+def normalize_company_name(name):
+    """Chuan hoa ten cong ty de so sanh: bo tien to, loai hinh, uppercase, trim."""
+    s = name.strip().upper()
+    prefixes = [
+        r'CONG\s+TY\s+CO\s+PHAN\s+',
+        r'CONG\s+TY\s+TNHH\s+MTV\s+',
+        r'CONG\s+TY\s+TNHH\s+',
+        r'CONG\s+TY\s+CP\s+',
+        r'CONG\s+TY\s+',
+        r'CTCP\s+',
+        r'CTTNHH\s+',
+        r'CT\s+',
+        r'DOANH\s+NGHIEP\s+TU\s+NHAN\s+',
+        r'DOANH\s+NGHIEP\s+',
+        r'DNTN\s+',
+        r'DN\s+',
+    ]
+    for p in prefixes:
+        s2 = re.sub(r'^' + p, '', s, count=1)
+        if s2 != s:
+            s = s2
+            break
+    for kw in ['TNHH MTV', 'TNHH', 'CO PHAN', 'CP', 'MTV']:
+        s = re.sub(r'\b' + kw + r'\b', '', s)
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s
 
 
 def list_distinct_companies():
@@ -54,7 +127,7 @@ def find_similar_company(name):
     normalized = normalize_company_name(name)
     with get_conn() as c:
         row = c.execute(
-            "SELECT company_name FROM company_registry WHERE normalized_name=%s ORDER BY id DESC LIMIT 1",
+            "SELECT company_name FROM company_registry WHERE normalized_name=? ORDER BY id DESC LIMIT 1",
             (normalized,)
         ).fetchone()
         return row[0] if row else None
@@ -64,7 +137,7 @@ def get_or_create_company_seq(khach_hang, year):
     normalized = normalize_company_name(khach_hang)
     with get_conn() as c:
         existing = c.execute(
-            "SELECT company_seq FROM company_registry WHERE normalized_name=%s AND year=%s",
+            "SELECT company_seq FROM company_registry WHERE normalized_name=? AND year=?",
             (normalized, year)
         ).fetchone()
         
@@ -72,12 +145,12 @@ def get_or_create_company_seq(khach_hang, year):
             return existing[0]
             
         max_seq = c.execute(
-            "SELECT COALESCE(MAX(company_seq), 0) FROM company_registry WHERE year=%s",
+            "SELECT COALESCE(MAX(company_seq), 0) FROM company_registry WHERE year=?",
             (year,)
         ).fetchone()[0]
         company_seq = max_seq + 1
         c.execute(
-            "INSERT INTO company_registry (company_name, normalized_name, company_seq, year) VALUES (%s,%s,%s,%s)",
+            "INSERT INTO company_registry (company_name, normalized_name, company_seq, year) VALUES (?,?,?,?)",
             (khach_hang.strip(), normalized, company_seq, year)
         )
         return company_seq
@@ -86,16 +159,14 @@ def find_hop_dong_by_so(khach_hang, so_hd):
     """Tim hop dong da ton tai theo khach hang va so_hd."""
     if not so_hd: return None
     with get_conn() as c:
-        c.execute("SELECT * FROM hop_dong WHERE khach_hang=%s AND so_hd=%s", (khach_hang, so_hd))
-        return c.fetchone()
+        return c.execute("SELECT * FROM hop_dong WHERE khach_hang=? AND so_hd=?", (khach_hang, so_hd)).fetchone()
 
 def generate_ma_hop_dong(khach_hang, year=None):
     if year is None: year = date.today().year
     company_seq = get_or_create_company_seq(khach_hang, year)
     with get_conn() as c:
         prefix = f"HD-{year}-{company_seq:03d}."
-        c.execute("SELECT ma_hop_dong FROM hop_dong WHERE ma_hop_dong LIKE %s", (f"{prefix}%",))
-        rows = c.fetchall()
+        rows = c.execute("SELECT ma_hop_dong FROM hop_dong WHERE ma_hop_dong LIKE ?", (f"{prefix}%",)).fetchall()
         max_idx = 0
         for r in rows:
             try:
@@ -110,8 +181,7 @@ def generate_ma_giai_ngan(khach_hang, year=None):
     company_seq = get_or_create_company_seq(khach_hang, year)
     with get_conn() as c:
         prefix = f"TU-{year}-{company_seq:03d}."
-        c.execute("SELECT ma_giai_ngan FROM tam_ung WHERE ma_giai_ngan LIKE %s", (f"{prefix}%",))
-        rows = c.fetchall()
+        rows = c.execute("SELECT ma_giai_ngan FROM tam_ung WHERE ma_giai_ngan LIKE ?", (f"{prefix}%",)).fetchall()
         max_idx = 0
         for r in rows:
             try:
@@ -123,14 +193,12 @@ def generate_ma_giai_ngan(khach_hang, year=None):
 # ---- Users ----
 def list_users():
     with get_conn() as c:
-        c.execute("SELECT * FROM users WHERE active=1 ORDER BY role, full_name")
-        return c.fetchall()
+        return c.execute("SELECT * FROM users WHERE active=1 ORDER BY role, full_name").fetchall()
 
 
 def get_user(username):
     with get_conn() as c:
-        c.execute("SELECT * FROM users WHERE username=%s", (username,))
-        return c.fetchone()
+        return c.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
 
 
 # ---- Hop dong ----
@@ -138,16 +206,14 @@ def list_hop_dong(phong=None):
     with get_conn() as c:
         if phong:
             return c.execute(
-                "SELECT * FROM hop_dong WHERE phong_phu_trach=%s ORDER BY created_at DESC", (phong,)
+                "SELECT * FROM hop_dong WHERE phong_phu_trach=? ORDER BY created_at DESC", (phong,)
             ).fetchall()
-        c.execute("SELECT * FROM hop_dong ORDER BY created_at DESC")
-        return c.fetchall()
+        return c.execute("SELECT * FROM hop_dong ORDER BY created_at DESC").fetchall()
 
 
 def get_hop_dong(ma):
     with get_conn() as c:
-        c.execute("SELECT * FROM hop_dong WHERE ma_hop_dong=%s", (ma,))
-        return c.fetchone()
+        return c.execute("SELECT * FROM hop_dong WHERE ma_hop_dong=?", (ma,)).fetchone()
 
 
 def add_hop_dong(data, user):
@@ -155,7 +221,7 @@ def add_hop_dong(data, user):
         c.execute("""INSERT INTO hop_dong
             (ma_hop_dong, khach_hang, cif, don_vi_thu_huong, so_hd, gia_tri_hd,
              ngay_hop_dong, ngay_ket_thuc_hd, loai_tu, loai_gia_tri_kt, pct_khau_tru, phong_phu_trach, ghi_chu, khe_uoc_vay, created_by)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (data.get("ma_hop_dong"), data.get("khach_hang"), data.get("cif"), data.get("don_vi_thu_huong"), data.get("so_hd"),
              data.get("gia_tri_hd"), data.get("ngay_hop_dong"), data.get("ngay_ket_thuc_hd"),
              data.get("loai_tu", "khau_tru_dot"), data.get("loai_gia_tri_kt", "Trước VAT"),
@@ -167,15 +233,14 @@ def add_hop_dong(data, user):
 # ---- Tam ung (Giai ngan) ----
 def list_tam_ung(ma_hop_dong):
     with get_conn() as c:
-        c.execute("SELECT * FROM tam_ung WHERE ma_hop_dong=%s ORDER BY ngay_giai_ngan ASC", (ma_hop_dong,))
-        return c.fetchall()
+        return c.execute("SELECT * FROM tam_ung WHERE ma_hop_dong=? ORDER BY ngay_giai_ngan ASC", (ma_hop_dong,)).fetchall()
 
 
 def add_tam_ung(data, user):
     with get_conn() as c:
         c.execute("""INSERT INTO tam_ung
             (ma_giai_ngan, ma_hop_dong, so_tien_tu, ngay_giai_ngan, ghi_chu, created_by)
-            VALUES (%s,%s,%s,%s,%s,%s)""",
+            VALUES (?,?,?,?,?,?)""",
             (data.get("ma_giai_ngan"), data.get("ma_hop_dong"), data.get("so_tien_tu"),
              data.get("ngay_giai_ngan"), data.get("ghi_chu"), user))
         c.commit()
@@ -183,19 +248,19 @@ def add_tam_ung(data, user):
 
 def update_tam_ung_ghi_chu(ma_giai_ngan, ghi_chu):
     with get_conn() as c:
-        c.execute("UPDATE tam_ung SET ghi_chu=%s WHERE ma_giai_ngan=%s", (ghi_chu, ma_giai_ngan))
+        c.execute("UPDATE tam_ung SET ghi_chu=? WHERE ma_giai_ngan=?", (ghi_chu, ma_giai_ngan))
         c.commit()
 
 
 def delete_hop_dong(ma, user):
     with get_conn() as c:
         # Xóa các bảng con trước để tránh lỗi Foreign Key
-        c.execute("DELETE FROM tam_ung WHERE ma_hop_dong=%s", (ma,))
-        c.execute("DELETE FROM hoa_don WHERE ma_hop_dong=%s", (ma,))
-        c.execute("DELETE FROM hstt WHERE ma_hop_dong=%s", (ma,))
-        c.execute("DELETE FROM staging_hd WHERE ma_hop_dong=%s", (ma,))
+        c.execute("DELETE FROM tam_ung WHERE ma_hop_dong=?", (ma,))
+        c.execute("DELETE FROM hoa_don WHERE ma_hop_dong=?", (ma,))
+        c.execute("DELETE FROM hstt WHERE ma_hop_dong=?", (ma,))
+        c.execute("DELETE FROM staging_hd WHERE ma_hop_dong=?", (ma,))
         # Sau đó xóa bảng cha
-        c.execute("DELETE FROM hop_dong WHERE ma_hop_dong=%s", (ma,))
+        c.execute("DELETE FROM hop_dong WHERE ma_hop_dong=?", (ma,))
         c.commit()
         log(c, "DEL_HOP_DONG", "hop_dong", ma, user, "")
 
@@ -204,17 +269,15 @@ def delete_hop_dong(ma, user):
 def list_hstt(ma_hop_dong=None):
     with get_conn() as c:
         if ma_hop_dong:
-            c.execute("SELECT * FROM hstt WHERE ma_hop_dong=%s ORDER BY dot_so", (ma_hop_dong,))
-        return c.fetchall()
-        c.execute("SELECT * FROM hstt ORDER BY ma_hop_dong, dot_so")
-        return c.fetchall()
+            return c.execute("SELECT * FROM hstt WHERE ma_hop_dong=? ORDER BY dot_so", (ma_hop_dong,)).fetchall()
+        return c.execute("SELECT * FROM hstt ORDER BY ma_hop_dong, dot_so").fetchall()
 
 
 def add_hstt(data, user):
     with get_conn() as c:
         c.execute("""INSERT INTO hstt
             (ma_hop_dong, dot_so, ngay_hstt, kl_truoc_vat, vat, tong_cong, loai_kl, ghi_chu, created_by)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            VALUES (?,?,?,?,?,?,?,?,?)""",
             (data.get("ma_hop_dong"), data.get("dot_so"), data.get("ngay_hstt"),
              data.get("kl_truoc_vat"), data.get("vat", 0), data.get("tong_cong", data.get("kl_truoc_vat")),
              data.get("loai_kl", "Trước VAT"), data.get("ghi_chu"), user))
@@ -224,8 +287,8 @@ def add_hstt(data, user):
 def update_hstt(hstt_id, data, user):
     with get_conn() as c:
         c.execute("""UPDATE hstt
-            SET dot_so=%s, ngay_hstt=%s, kl_truoc_vat=%s, vat=%s, tong_cong=%s, ghi_chu=%s, loai_kl=%s
-            WHERE id=%s""",
+            SET dot_so=?, ngay_hstt=?, kl_truoc_vat=?, vat=?, tong_cong=?, ghi_chu=?, loai_kl=?
+            WHERE id=?""",
             (data.get("dot_so"), data.get("ngay_hstt"), data.get("kl_truoc_vat"), data.get("vat", 0),
              data.get("tong_cong", data.get("kl_truoc_vat")), data.get("ghi_chu"), data.get("loai_kl", "Trước VAT"), hstt_id))
         c.commit()
@@ -233,7 +296,7 @@ def update_hstt(hstt_id, data, user):
 
 def delete_hstt(hstt_id, user):
     with get_conn() as c:
-        c.execute("DELETE FROM hstt WHERE id=%s", (hstt_id,))
+        c.execute("DELETE FROM hstt WHERE id=?", (hstt_id,))
         c.commit()
         log(c, "DELETE_HSTT", "hstt", str(hstt_id), user, "")
 
@@ -242,13 +305,12 @@ def delete_hstt(hstt_id, user):
 def list_hoa_don(ma_hop_dong=None, dot=None, status=None):
     q = "SELECT * FROM hoa_don WHERE 1=1"
     args = []
-    if ma_hop_dong: q += " AND ma_hop_dong=%s"; args.append(ma_hop_dong)
-    if dot is not None: q += " AND dot_so=%s"; args.append(dot)
-    if status: q += " AND status=%s"; args.append(status)
+    if ma_hop_dong: q += " AND ma_hop_dong=?"; args.append(ma_hop_dong)
+    if dot is not None: q += " AND dot_so=?"; args.append(dot)
+    if status: q += " AND status=?"; args.append(status)
     q += " ORDER BY uploaded_at DESC"
     with get_conn() as c:
-        c.execute(q, args)
-        return c.fetchall()
+        return c.execute(q, args).fetchall()
 
 
 def add_hoa_don(data, user, status="approved"):
@@ -257,7 +319,7 @@ def add_hoa_don(data, user, status="approved"):
             (ma_hop_dong, dot_so, so_hd, ngay_hd, mst_ban, ten_ban,
              tien_truoc_vat, vat, tong_cong, ma_tra_cuu, file_src,
              status, uploaded_by, approved_by, approved_at, ghi_chu)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (data.get("ma_hop_dong"), data.get("dot_so", 1), data.get("so_hd"), data.get("ngay_hd"),
              data.get("mst_ban"), data.get("ten_ban"),
              data.get("tien_truoc_vat"), data.get("vat"), data.get("tong_cong"),
@@ -272,14 +334,14 @@ def add_hoa_don(data, user, status="approved"):
 
 def approve_hoa_don(hd_id, user):
     with get_conn() as c:
-        c.execute("UPDATE hoa_don SET status='approved', approved_by=%s, approved_at=%s WHERE id=%s",
+        c.execute("UPDATE hoa_don SET status='approved', approved_by=?, approved_at=? WHERE id=?",
                   (user, datetime.now(), hd_id))
         c.commit()
 
 
 def reject_hoa_don(hd_id, user, reason=""):
     with get_conn() as c:
-        c.execute("UPDATE hoa_don SET status='rejected', approved_by=%s, approved_at=%s, ghi_chu=%s WHERE id=%s",
+        c.execute("UPDATE hoa_don SET status='rejected', approved_by=?, approved_at=?, ghi_chu=? WHERE id=?",
                   (user, datetime.now(), reason, hd_id))
         c.commit()
 
@@ -287,57 +349,52 @@ def reject_hoa_don(hd_id, user, reason=""):
 # ---- Staging ----
 def add_staging(data, user):
     with get_conn() as c:
-        c.execute("""INSERT INTO staging_hd 
+        cur = c.execute("""INSERT INTO staging_hd 
             (ma_hop_dong, dot_so, so_hd, ngay_hd, mst_ban, ten_ban, tien_truoc_vat, vat, tong_cong,
              ma_tra_cuu, file_src, parse_status, uploaded_by)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (data.get("ma_hop_dong"), data.get("dot_so"), data.get("so_hd"), data.get("ngay_hd"), data.get("mst_ban"),
              data.get("ten_ban"), data.get("tien_truoc_vat"), data.get("vat"),
              data.get("tong_cong"), data.get("ma_tra_cuu"),
              data.get("file_src"), data.get("parse_status"), user))
-        c.execute("SELECT LASTVAL()")
         c.commit()
-        return c.fetchone()["lastval"]
+        return cur.lastrowid
 
 
 def list_staging(user=None):
     with get_conn() as c:
         if user:
-            c.execute("SELECT * FROM staging_hd WHERE uploaded_by=%s ORDER BY uploaded_at DESC", (user,))
-        return c.fetchall()
-        c.execute("SELECT * FROM staging_hd ORDER BY uploaded_at DESC")
-        return c.fetchall()
+            return c.execute("SELECT * FROM staging_hd WHERE uploaded_by=? ORDER BY uploaded_at DESC", (user,)).fetchall()
+        return c.execute("SELECT * FROM staging_hd ORDER BY uploaded_at DESC").fetchall()
 
 
 def delete_staging(staging_id):
     with get_conn() as c:
-        c.execute("DELETE FROM staging_hd WHERE id=%s", (staging_id,))
+        c.execute("DELETE FROM staging_hd WHERE id=?", (staging_id,))
         c.commit()
 
 
 def delete_hoa_don(hd_id, user):
     with get_conn() as c:
-        c.execute("DELETE FROM hoa_don WHERE id=%s", (hd_id,))
+        c.execute("DELETE FROM hoa_don WHERE id=?", (hd_id,))
         c.commit()
 
 
 def get_staging(staging_id):
     with get_conn() as c:
-        c.execute("SELECT * FROM staging_hd WHERE id=%s", (staging_id,))
-        return c.fetchone()
+        return c.execute("SELECT * FROM staging_hd WHERE id=?", (staging_id,)).fetchone()
 
 
 # ---- Calc helpers ----
 def calc_summary(ma_hop_dong):
     """Tinh luy ke giai ngan, khau tru, HD bo sung, du can bo sung cho 1 Hop Dong."""
     with get_conn() as c:
-        c.execute("SELECT * FROM hop_dong WHERE ma_hop_dong=%s", (ma_hop_dong,))
-        hd = c.fetchone()
+        hd = c.execute("SELECT * FROM hop_dong WHERE ma_hop_dong=?", (ma_hop_dong,)).fetchone()
         if not hd: return None
         
         # Tong tien da giai ngan cho HD nay
         gn_row = c.execute(
-            "SELECT COALESCE(SUM(so_tien_tu), 0), MIN(ngay_giai_ngan) FROM tam_ung WHERE ma_hop_dong=%s",
+            "SELECT COALESCE(SUM(so_tien_tu), 0), MIN(ngay_giai_ngan) FROM tam_ung WHERE ma_hop_dong=?",
             (ma_hop_dong,)
         ).fetchone()
         tong_giai_ngan = gn_row[0]
@@ -347,12 +404,12 @@ def calc_summary(ma_hop_dong):
         loai_kt = hd.get("loai_gia_tri_kt") if hd.get("loai_gia_tri_kt") else "Trước VAT"
         if loai_kt == "Sau VAT":
             kt_luy_ke = c.execute(
-                "SELECT COALESCE(SUM(COALESCE(tong_cong, kl_truoc_vat) * %s),0) FROM hstt WHERE ma_hop_dong=%s",
+                "SELECT COALESCE(SUM(COALESCE(tong_cong, kl_truoc_vat) * ?),0) FROM hstt WHERE ma_hop_dong=?",
                 (pct, ma_hop_dong)
             ).fetchone()[0]
         else:
             kt_luy_ke = c.execute(
-                "SELECT COALESCE(SUM(kl_truoc_vat * %s),0) FROM hstt WHERE ma_hop_dong=%s",
+                "SELECT COALESCE(SUM(kl_truoc_vat * ?),0) FROM hstt WHERE ma_hop_dong=?",
                 (pct, ma_hop_dong)
             ).fetchone()[0]
         
@@ -361,12 +418,12 @@ def calc_summary(ma_hop_dong):
         
         if hd_loai_kt == "Sau VAT":
             hd_luy_ke = c.execute(
-                "SELECT COALESCE(SUM(COALESCE(tong_cong, tien_truoc_vat) * %s),0) FROM hoa_don WHERE ma_hop_dong=%s AND status='approved'",
+                "SELECT COALESCE(SUM(COALESCE(tong_cong, tien_truoc_vat) * ?),0) FROM hoa_don WHERE ma_hop_dong=? AND status='approved'",
                 (hd_pct, ma_hop_dong)
             ).fetchone()[0]
         else:
             hd_luy_ke = c.execute(
-                "SELECT COALESCE(SUM(tien_truoc_vat * %s),0) FROM hoa_don WHERE ma_hop_dong=%s AND status='approved'",
+                "SELECT COALESCE(SUM(tien_truoc_vat * ?),0) FROM hoa_don WHERE ma_hop_dong=? AND status='approved'",
                 (hd_pct, ma_hop_dong)
             ).fetchone()[0]
         
@@ -387,7 +444,7 @@ def calc_summary(ma_hop_dong):
 # ---- Audit ----
 def log(conn, action, entity, entity_id, username, details):
     conn.execute(
-        "INSERT INTO audit_log (action, entity, entity_id, username, details) VALUES (%s,%s,%s,%s,%s)",
+        "INSERT INTO audit_log (action, entity, entity_id, username, details) VALUES (?,?,?,?,?)",
         (action, entity, entity_id, username, details)
     )
 
@@ -397,35 +454,33 @@ def log_action(action, entity, entity_id, username, details):
 
 def recent_audit(limit=50):
     with get_conn() as c:
-        c.execute("SELECT * FROM audit_log ORDER BY ts DESC LIMIT %s", (limit,))
-        return c.fetchall()
+        return c.execute("SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
 
 def add_dashboard_logs(data, user):
     with get_conn() as c:
         c.execute("""INSERT INTO dashboard_logs
             (loai_hoat_dong, chi_tiet, ma_hop_dong, created_by)
-            VALUES (%s,%s,%s,%s)""",
+            VALUES (?,?,?,?)""",
             (data.get("loai_hoat_dong"), data.get("chi_tiet"), data.get("ma_hop_dong"), user))
         c.commit()
 
 def list_dashboard_logs(limit=20):
     with get_conn() as c:
-        c.execute("SELECT * FROM dashboard_logs ORDER BY created_at DESC LIMIT %s", (limit,))
-        return c.fetchall()
+        return c.execute("SELECT * FROM dashboard_logs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
 
 def get_distinct_upload_dates(phong=None):
     with get_conn() as c:
         if phong:
-            c.execute("""
-                SELECT DISTINCT (h.uploaded_at + interval '7 hours')::date as d 
+            cur = c.execute("""
+                SELECT DISTINCT date(h.uploaded_at, '+7 hours') as d 
                 FROM hoa_don h
                 JOIN hop_dong hd ON h.ma_hop_dong = hd.ma_hop_dong
-                WHERE h.uploaded_at IS NOT NULL AND hd.phong_phu_trach = %s
+                WHERE h.uploaded_at IS NOT NULL AND hd.phong_phu_trach = ?
                 ORDER BY d DESC
             """, (phong,))
         else:
-            c.execute("""
-                SELECT DISTINCT (uploaded_at + interval '7 hours')::date as d 
+            cur = c.execute("""
+                SELECT DISTINCT date(uploaded_at, '+7 hours') as d 
                 FROM hoa_don 
                 WHERE uploaded_at IS NOT NULL
                 ORDER BY d DESC
@@ -439,12 +494,12 @@ def get_hoadons_by_date_str(date_str, phong=None):
                 SELECT h.* 
                 FROM hoa_don h
                 JOIN hop_dong hd ON h.ma_hop_dong = hd.ma_hop_dong
-                WHERE (h.uploaded_at + interval '7 hours')::date = %s AND hd.phong_phu_trach = %s
+                WHERE date(h.uploaded_at, '+7 hours') = ? AND hd.phong_phu_trach = ?
                 ORDER BY h.uploaded_at DESC
             """, (date_str, phong)).fetchall()
         else:
             return c.execute("""
                 SELECT * FROM hoa_don 
-                WHERE (uploaded_at + interval '7 hours')::date = %s
+                WHERE date(uploaded_at, '+7 hours') = ?
                 ORDER BY uploaded_at DESC
             """, (date_str,)).fetchall()

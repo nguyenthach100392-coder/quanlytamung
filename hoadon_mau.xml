@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<HDon>
+    <DLHDon>
+        <TTChung>
+            <PBan>2.0.0</PBan>
+            <MSoAHDon>1</MSoAHDon>
+            <MSo>1C26TAA</MSo>
+            <KHieu>C26TAA</KHieu>
+            <SHDon>1234567</SHDon>
+            <NLap>2026-05-23</NLap>
+            <DVTTe>VND</DVTTe>
+            <TGia>1</TGia>
+            <HTTToan>TM/CK</HTTToan>
+        </TTChung>
+        <NDHDon>
+            <NBan>
+                <Ten>CONG TY TNHH MOT THANH VIEN DUMMY</Ten>
+                <MST>0123456789</MST>
+                <DChi>123 Duong ABC, Quan XYZ, Ha Noi</DChi>
+            </NBan>
+            <NMua>
+                <Ten>KHACH HANG ABC</Ten>
+                <MST>9876543210</MST>
+            </NMua>
+            <DSHHDVu>
+                <HHDVu>
+                    <TChat>1</TChat>
+                    <STT>1</STT>
+                    <THHDVu>Dich vu phan mem</THHDVu>
+                    <SLuong>1</SLuong>
+                    <DGia>50000000</DGia>
+                    <Tien>50000000</Tien>
+                    <TSuat>10</TSuat>
+                </HHDVu>
+            </DSHHDVu>
+            <TToan>
+                <TgTCThue>50000000</TgTCThue>
+                <TgTThue>5000000</TgTThue>
+                <TgTTTBSo>55000000</TgTTTBSo>
+                <TgTTTBChu>Nam muoi lam trieu dong</TgTTTBChu>
+            </TToan>
+        </NDHDon>
+    </DLHDon>
+    <MCCQT>MTCDUMMY123456</MCCQT>
+</HDon>

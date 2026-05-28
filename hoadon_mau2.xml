@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<HDon>
+    <DLHDon>
+        <TTChung>
+            <SHDon>889900</SHDon>
+            <NLap>2026-05-24</NLap>
+            <TTHDon>1</TTHDon>
+            <MTCuu>8877665544332211</MTCuu>
+        </TTChung>
+        <NDHDon>
+            <NBan>
+                <Ten>Công ty Cổ phần Thương mại Hoàng Gia</Ten>
+                <MST>0102030405</MST>
+                <DChi>456 Đường Láng, Hà Nội</DChi>
+            </NBan>
+            <NMua>
+                <Ten>Khách hàng thử nghiệm</Ten>
+                <MST>0908070605</MST>
+            </NMua>
+            <DSHHDVu>
+                <HHDVu>
+                    <TChat>1</TChat>
+                    <THHDVu>Máy in HP Laser</THHDVu>
+                    <DVTinh>Cái</DVTinh>
+                    <SLuong>10</SLuong>
+                    <DGia>5000000</DGia>
+                    <ThTien>50000000</ThTien>
+                    <TSuat>8%</TSuat>
+                </HHDVu>
+            </DSHHDVu>
+            <TToan>
+                <TgTCThue>50000000</TgTCThue>
+                <TgTThue>4000000</TgTThue>
+                <TgTTTBSo>54000000</TgTTTBSo>
+                <TgTTTBChu>Năm mươi bốn triệu đồng chẵn</TgTTTBChu>
+            </TToan>
+        </NDHDon>
+    </DLHDon>
+</HDon>

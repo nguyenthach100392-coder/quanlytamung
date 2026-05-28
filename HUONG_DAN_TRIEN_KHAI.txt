@@ -1,0 +1,95 @@
+==============================================================
+ HE THONG THEO DOI TAM UNG & BO SUNG HOA DON - WEB APP
+ Huong dan trien khai cho IT
+==============================================================
+
+KIEN TRUC
+---------
+- Web app (Streamlit) chay tren 1 may server office
+- Database: SQLite (file tamung.db ben canh app.py)
+- Multi-user: cac phong truy cap qua trinh duyet web
+- 2 role: phong_kh (upload HD) va qttd (full quyen)
+- Export: tai Excel ve may HOAC push len folder Google Drive (sync local)
+
+YEU CAU MAY SERVER
+------------------
+- Windows 10/11 hoac Windows Server
+- Python 3.10+ (tu python.org, nho tick "Add to PATH")
+- Mang LAN noi bo - ban dau co the dung may CBO co IP co dinh
+- (Tuy chon) Cai Google Drive Desktop va dang nhap email co quyen
+  truy cap folder Drive chung de export tu dong sync
+
+CAU TRUC THU MUC TRIEN KHAI (vd: D:\TamUngApp\)
+-------------------------------------------------
+  app.py              <- Main Streamlit app
+  db.py               <- Database layer (SQLite)
+  parsers.py          <- Parser XML/PDF hoa don
+  exporter.py         <- Export Excel + push Drive
+  requirements.txt    <- Thu vien Python can cai
+  install.bat         <- Double-click de cai thu vien (1 lan)
+  run.bat             <- Double-click de khoi dong server
+  tamung.db           <- File DB (tu sinh khi chay lan dau)
+  HUONG_DAN_TRIEN_KHAI.txt (file nay)
+
+CAI DAT 1 LAN
+-------------
+1) Copy toan bo thu muc "app/" sang may server, vd: D:\TamUngApp\
+2) Cai Python tu https://python.org/downloads (TICK "Add Python to PATH")
+3) Double-click "install.bat" trong thu muc - cho cai xong
+4) Mo "run.bat" - server se khoi dong, tu mo trinh duyet vao http://localhost:8501
+
+CAU HINH MANG NOI BO
+--------------------
+- Tim IP cua may server: mo cmd, go "ipconfig", xem dong "IPv4 Address"
+  (vd: 10.x.x.x)
+- Mo Firewall (Windows Defender Firewall):
+  + Allow an app -> Add port 8501 (TCP) inbound
+- Cac phong khac truy cap qua: http://[IP_SERVER]:8501
+  (vd: http://10.10.5.20:8501)
+- Khuyen nghi: dat shortcut tren Desktop cac may KH
+
+USER DEFAULT (sua trong DB hoac trong db.py phan seed)
+------------------------------------------------------
+- admin       (admin)
+- qttd01      (qttd)
+- phongkh_dn  (phong_kh, dept=KHDN)
+- phongkh_sme (phong_kh, dept=SME)
+
+THEM USER MOI: mo cmd, vao thu muc app, go:
+  python -c "from db import get_conn; c=get_conn(); c.execute(\"INSERT INTO users (username,full_name,dept,role) VALUES ('user_moi','Ten day du','PHONG','phong_kh')\"); c.commit()"
+
+NANG CAO BAO MAT (production)
+-----------------------------
+- Tich hop SSO/LDAP ngan hang: thay ham login_screen() trong app.py
+- Backup file tamung.db hang ngay (copy ra folder backup)
+- Bat HTTPS qua reverse proxy (nginx/IIS)
+
+EXPORT LEN GOOGLE DRIVE
+-----------------------
+1) Cai Google Drive Desktop tren may server
+2) Dang nhap email cua to chuc co quyen ghi folder shared "TamUng/"
+3) Drive Desktop se sync folder do ve duong dan local, vd:
+   "G:\Shared drives\TamUng\" hoac "C:\Users\xxx\Google Drive\..."
+4) Trong app, vao tab "Export & Drive" -> nhap duong dan local nay
+5) Bam "Push len Drive" -> file Excel se duoc copy vao folder do,
+   sau vai giay file tu sync len Drive, cac phong truy cap qua trinh
+   duyet hoac Drive app.
+- File tao 2 ban: 1 ban co timestamp (luu su), 1 ban "_LATEST" de cap nhat.
+
+GIAM SAT
+--------
+- Audit log: tat ca thao tac (them mon, them HD, duyet, reject)
+  duoc ghi vao bang audit_log
+- QTTD mo tab "Audit log" de xem hoat dong gan day
+
+KHI GAP LOI
+-----------
+- Server khong khoi dong: kiem tra da cai dung Python va requirements
+- Cac phong khong truy cap duoc: kiem tra IP, firewall, port 8501
+- Loi parse HD: dam bao KH gui file XML chuan TT78 (uu tien hon PDF)
+- DB bi loi: backup tamung.db, sau do xoa va chay lai (data se mat)
+
+LIEN HE
+-------
+Mo ticket noi bo neu can ho tro them tinh nang: SSO, phan quyen sau,
+filter theo phong, bao cao tuy chinh, gui email canh bao, v.v.

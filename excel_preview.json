@@ -1,0 +1,48 @@
+{
+  "columns": [
+    "l",
+    "TÊN KHÁCH HÀNG",
+    "NGÀY GIẢI NGÂN",
+    "SỐ TIỀN TẠM ỨNG",
+    "LOẠI TÁM ỨNG",
+    "PHÒNG PHỤ TRÁCH",
+    "THEO DÕI BS HỒ SƠ",
+    "SỐ HỢP ĐỒNG",
+    "ĐƠN VỊ THỤ HƯỞNG"
+  ],
+  "sample": [
+    {
+      "l": 7.0,
+      "TÊN KHÁCH HÀNG": "Công ty Cổ phần Đầu tư Xây dựng BCONS",
+      "NGÀY GIẢI NGÂN": "2025-01-10",
+      "SỐ TIỀN TẠM ỨNG": 584552000,
+      "LOẠI TÁM ỨNG": "Khấu trừ ",
+      "PHÒNG PHỤ TRÁCH": "KHDN2",
+      "THEO DÕI BS HỒ SƠ": "Cty Bcons - Tạm ứng 20% Khoá cửa cảm ứng thẻ từ mật mã NEWNEO A10 tại dự án Khu Thương mại - Dịch vụ - Văn phòng- Căn hộ Bcons theo Hợp đồng số 02/2024/HĐMB/BCONS-NĐ ký ngày 18/12/2024",
+      "SỐ HỢP ĐỒNG": "02/2024/HĐMB/BCONS-NĐ",
+      "ĐƠN VỊ THỤ HƯỞNG": "CÔNG TY TRÁCH NHIỆM HỮU HẠN VẬT LIỆU XÂY DỰNG NGUYÊN ĐẠT"
+    },
+    {
+      "l": 8.0,
+      "TÊN KHÁCH HÀNG": "Công ty Cổ phần Đầu tư Xây dựng BCONS",
+      "NGÀY GIẢI NGÂN": "2025-01-10",
+      "SỐ TIỀN TẠM ỨNG": 153893520,
+      "LOẠI TÁM ỨNG": "Khấu trừ ",
+      "PHÒNG PHỤ TRÁCH": "KHDN2",
+      "THEO DÕI BS HỒ SƠ": "Cty Bcons - Tạm ứng 20% Khoá từ 4 chức năng VICODE VS-101 tại dự án Chung cư Lê Trọng Tấn theo Hợp đồng số 01/2024/HĐMB/BCONS-TNC ký ngày 28/12/2024",
+      "SỐ HỢP ĐỒNG": "01/2024/HĐMB/BCONS-TNC",
+      "ĐƠN VỊ THỤ HƯỞNG": "CÔNG TY TNHH TƯ VẤN VÀ CUNG CẤP NỘI THẤT TNC"
+    },
+    {
+      "l": 9.0,
+      "TÊN KHÁCH HÀNG": "Công ty Cổ phần Đầu tư Xây dựng BCONS",
+      "NGÀY GIẢI NGÂN": "2025-01-14",
+      "SỐ TIỀN TẠM ỨNG": 1065000000,
+      "LOẠI TÁM ỨNG": "Khấu trừ ",
+      "PHÒNG PHỤ TRÁCH": "KHDN2",
+      "THEO DÕI BS HỒ SƠ": "Cty Bcons - Tạm ứng 15% Cung cấp vật tư phụ, nhân công và máy thi công, thi công kểt cấu BTCT Phần hầm Hợp đồng 180/2024/HĐTCXD-BBT/BCONS-ATCONS ký ngày 18/11/2024",
+      "SỐ HỢP ĐỒNG": "180/2024/HĐTCXD-BBT/BCONS-ATCONS",
+      "ĐƠN VỊ THỤ HƯỞNG": "CÔNG TY TNHH AT CONSTRUCTION"
+    }
+  ]
+}
