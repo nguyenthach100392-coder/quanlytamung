@@ -153,9 +153,9 @@ def shorten_company_name(name):
 
 def compute_hd_status(r):
     today = date.today()
-    summary = db.calc_summary(r["ma_hop_dong"])
+    summary = db.calc_summary(r.get("ma_hop_dong"))
     if not summary: return summary, "?"
-    nkt = r["ngay_ket_thuc_hd"]
+    nkt = r.get("ngay_ket_thuc_hd")
     if isinstance(nkt, str):
         nkt = datetime.strptime(nkt, "%Y-%m-%d").date()
     # Hạn bổ sung HĐ = Ngày kết thúc HĐ + 30 ngày (theo CV 4483)
@@ -215,18 +215,18 @@ def page_dashboard():
         if tt == "Quá hạn": qua_han += 1
         elif tt == "Sắp đến hạn": sap_han += 1
         elif tt == "Hoàn tất": hoan_tat += 1
-        loai = r["loai_tu"]
+        loai = r.get("loai_tu")
         rows_display.append({
             "Ngày giải ngân": fmt_date(s.get("ngay_giai_ngan_dau")),
-            "Mã giải ngân": r["ma_hop_dong"], "Khách hàng": r["khach_hang"],
-            "Số hợp đồng": r["so_hd"] or "-",
-            "ĐV thụ hưởng": r['don_vi_thu_huong'] or "",
+            "Mã giải ngân": r.get("ma_hop_dong"), "Khách hàng": r.get("khach_hang"),
+            "Số hợp đồng": r.get("so_hd") or "-",
+            "ĐV thụ hưởng": r.get("don_vi_thu_huong") or "",
             "Loại": "Từng đợt" if loai == "khau_tru_dot" else "1 lần",
-            "Phòng": r["phong_phu_trach"] or "",
-            "Tổng giải ngân": s["tong_giai_ngan"], "HĐ bổ sung": s["hd_luy_ke"],
-            "Dư cần bổ sung": s["du_can_bo_sung"],
-            "Hạn bổ sung": fmt_date(s["han_cuoi"]),
-            "% Hoàn thành": s["pct_hoan_thanh"], "Trạng thái": tt,
+            "Phòng": r.get("phong_phu_trach") or "",
+            "Tổng giải ngân": s.get("tong_giai_ngan", 0), "HĐ bổ sung": s.get("hd_luy_ke", 0),
+            "Dư cần bổ sung": s.get("du_can_bo_sung", 0),
+            "Hạn bổ sung": fmt_date(s.get("han_cuoi")),
+            "% Hoàn thành": s.get("pct_hoan_thanh", 0), "Trạng thái": tt,
         })
 
     c1, c2, c3, c4 = st.columns(4)
@@ -277,22 +277,22 @@ def page_hop_dong():
     all_rows = db.list_hop_dong(phong=phong_filter)
     filtered = []
     for r in all_rows:
-        loai = r["loai_tu"]
-        if filter_phong != "Tất cả" and r["phong_phu_trach"] != filter_phong: continue
+        loai = r.get("loai_tu")
+        if filter_phong != "Tất cả" and r.get("phong_phu_trach") != filter_phong: continue
         if filter_loai == "Khấu trừ từng đợt" and loai != "khau_tru_dot": continue
         if filter_loai == "Thanh toán 1 lần" and loai != "mot_lan": continue
         if search_text:
             q = search_text.strip().upper()
-            searchable = f"{r['ma_hop_dong']} {r['khach_hang']} {r['don_vi_thu_huong']} {r['so_hd']} {r['ghi_chu']}".upper()
+            searchable = f"{r.get('ma_hop_dong')} {r.get('khach_hang')} {r.get('don_vi_thu_huong')} {r.get('so_hd')} {r.get('ghi_chu')}".upper()
             if q not in searchable: continue
             
         # Tinh toan summary de su dung trong dropdown hien thi
         s, tt = compute_hd_status(r)
         
         # Format string cho dropdown: BCONS-số HĐ-số tiền-đơn vị thụ hưởng
-        kh_short = shorten_company_name(r['khach_hang'])
-        dv_short = shorten_company_name(r['don_vi_thu_huong'])
-        so_hd = r['so_hd'] or "Chưa rõ"
+        kh_short = shorten_company_name(r.get('khach_hang', ''))
+        dv_short = shorten_company_name(r.get('don_vi_thu_huong', ''))
+        so_hd = r.get('so_hd') or "Chưa rõ"
         tien = f"{fmt_vnd_dot(s['tong_giai_ngan'])}đ" if s['tong_giai_ngan'] else "0đ"
         
         display_name = f"{kh_short} - HĐ: {so_hd} - GN: {tien}"

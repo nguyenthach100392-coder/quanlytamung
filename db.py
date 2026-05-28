@@ -328,8 +328,8 @@ def calc_summary(ma_hop_dong):
         tong_giai_ngan = gn_row[0]
         ngay_gn_dau = gn_row[1]
         
-        pct = (hd["pct_khau_tru"] or 0) / 100.0
-        loai_kt = hd["loai_gia_tri_kt"] if hd["loai_gia_tri_kt"] else "Trước VAT"
+        pct = (hd.get("pct_khau_tru") or 0) / 100.0
+        loai_kt = hd.get("loai_gia_tri_kt") if hd.get("loai_gia_tri_kt") else "Trước VAT"
         if loai_kt == "Sau VAT":
             kt_luy_ke = c.execute(
                 "SELECT COALESCE(SUM(COALESCE(tong_cong, kl_truoc_vat) * ?),0) FROM hstt WHERE ma_hop_dong=?",
@@ -341,8 +341,8 @@ def calc_summary(ma_hop_dong):
                 (pct, ma_hop_dong)
             ).fetchone()[0]
         
-        hd_pct = 1.0 if hd["loai_tu"] == "mot_lan" else pct
-        hd_loai_kt = "Trước VAT" if hd["loai_tu"] == "mot_lan" else loai_kt
+        hd_pct = 1.0 if hd.get("loai_tu") == "mot_lan" else pct
+        hd_loai_kt = "Trước VAT" if hd.get("loai_tu") == "mot_lan" else loai_kt
         
         if hd_loai_kt == "Sau VAT":
             hd_luy_ke = c.execute(
@@ -361,7 +361,7 @@ def calc_summary(ma_hop_dong):
         return {
             "tong_giai_ngan": tong_giai_ngan,
             "ngay_giai_ngan_dau": ngay_gn_dau,
-            "loai_tu": hd["loai_tu"],
+            "loai_tu": hd.get("loai_tu"),
             "khau_tru_luy_ke": kt_luy_ke,
             "hd_luy_ke": hd_luy_ke,
             "du_can_bo_sung": du,
