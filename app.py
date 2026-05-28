@@ -301,6 +301,10 @@ def page_hop_dong():
 
     phong_filter = None if is_qttd else uinfo.get("dept")
     all_rows = db.list_hop_dong(phong=phong_filter)
+    
+    # NEW: Fetch all summaries to fix N+1 problem
+    summaries = db.bulk_calc_summary(all_rows)
+    
     filtered = []
     for r in all_rows:
         loai = r.get("loai_tu")
@@ -313,7 +317,7 @@ def page_hop_dong():
             if q not in searchable: continue
             
         # Tinh toan summary de su dung trong dropdown hien thi
-        s, tt = compute_hd_status(r)
+        s, tt = compute_hd_status(r, summaries.get(r.get('ma_hop_dong')))
         
         # Format string cho dropdown: BCONS-số HĐ-số tiền-đơn vị thụ hưởng
         kh_short = shorten_company_name(r.get('khach_hang', ''))
@@ -1069,9 +1073,10 @@ def page_upload_lo():
             st.warning("Chưa có Hợp đồng nào trong hệ thống.")
             return
             
+        summaries = db.bulk_calc_summary(all_rows)
         options = {}
         for r in all_rows:
-            s, tt = compute_hd_status(r)
+            s, tt = compute_hd_status(r, summaries.get(r.get('ma_hop_dong')))
             kh_short = shorten_company_name(r.get('khach_hang', ''))
             dv_short = shorten_company_name(r.get('don_vi_thu_huong', ''))
             so_hd = r.get('so_hd') or "Chưa rõ"

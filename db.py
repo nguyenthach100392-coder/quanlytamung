@@ -507,6 +507,7 @@ def bulk_calc_summary(hd_list):
             'ngay_giai_ngan_dau': ngay_gn_dau,
             'khau_tru_luy_ke': kt_luy_ke,
             'hd_luy_ke': hd_luy_ke,
-            'du_can_bo_sung': du
+            'du_can_bo_sung': du,
+            'pct_hoan_thanh': hd_luy_ke / tong_giai_ngan if tong_giai_ngan else 0.0
         }
     return res
