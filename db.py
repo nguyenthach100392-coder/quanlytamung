@@ -21,7 +21,41 @@ def get_conn():
     return conn
 
 def init_db():
-    pass
+    with get_conn() as c:
+        try:
+            c.execute("SELECT phong_phu_trach FROM hop_dong LIMIT 1")
+        except sqlite3.OperationalError:
+            c.execute("ALTER TABLE hop_dong ADD COLUMN phong_phu_trach TEXT")
+            
+        try:
+            c.execute("SELECT loai_tu FROM hop_dong LIMIT 1")
+        except sqlite3.OperationalError:
+            c.execute("ALTER TABLE hop_dong ADD COLUMN loai_tu TEXT NOT NULL DEFAULT 'khau_tru_dot'")
+            
+        try:
+            c.execute("SELECT loai_gia_tri_kt FROM hop_dong LIMIT 1")
+        except sqlite3.OperationalError:
+            c.execute("ALTER TABLE hop_dong ADD COLUMN loai_gia_tri_kt TEXT")
+            
+        try:
+            c.execute("SELECT pct_khau_tru FROM hop_dong LIMIT 1")
+        except sqlite3.OperationalError:
+            c.execute("ALTER TABLE hop_dong ADD COLUMN pct_khau_tru DOUBLE PRECISION DEFAULT 10.0")
+            
+        try:
+            c.execute("SELECT cif FROM hop_dong LIMIT 1")
+        except sqlite3.OperationalError:
+            c.execute("ALTER TABLE hop_dong ADD COLUMN cif TEXT")
+            
+        try:
+            c.execute("SELECT khe_uoc_vay FROM hop_dong LIMIT 1")
+        except sqlite3.OperationalError:
+            c.execute("ALTER TABLE hop_dong ADD COLUMN khe_uoc_vay TEXT")
+            
+        try:
+            c.execute("SELECT ngay_hop_dong FROM hop_dong LIMIT 1")
+        except sqlite3.OperationalError:
+            c.execute("ALTER TABLE hop_dong ADD COLUMN ngay_hop_dong DATE")
 
 def normalize_company_name(name):
     """Chuan hoa ten cong ty de so sanh: bo tien to, loai hinh, uppercase, trim."""
