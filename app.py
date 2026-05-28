@@ -791,21 +791,35 @@ def page_import_excel():
     import pandas as pd
     
     cols = [
-        "Khách hàng (Bắt buộc)",
+        "Khách hàng",
         "Mã CIF",
         "Đơn vị thụ hưởng",
         "Số Hợp đồng",
         "Ngày Hợp đồng (DD/MM/YYYY)",
         "Giá trị HĐ (VND)",
-        "Ngày kết thúc HĐ (DD/MM/YYYY) (Bắt buộc)",
-        "Tỷ lệ Khấu trừ (%) (Bắt buộc)",
+        "Ngày kết thúc HĐ (DD/MM/YYYY)",
+        "Tỷ lệ Khấu trừ (%)",
         "Phòng phụ trách",
         "Khế ước vay",
-        "Số tiền Giải ngân đợt 1 (VND) (Bắt buộc)",
-        "Ngày giải ngân (DD/MM/YYYY) (Bắt buộc)",
+        "Số tiền Giải ngân đợt 1 (VND)",
+        "Ngày giải ngân (DD/MM/YYYY)",
         "Ghi chú"
     ]
-    df_template = pd.DataFrame(columns=cols)
+    df_template = pd.DataFrame([{
+        "Khách hàng": "Công ty TNHH VD Mẫu",
+        "Mã CIF": "12345678",
+        "Đơn vị thụ hưởng": "Công ty TNHH VD Mẫu",
+        "Số Hợp đồng": "HD-2024-001",
+        "Ngày Hợp đồng (DD/MM/YYYY)": "01/01/2024",
+        "Giá trị HĐ (VND)": 1000000000,
+        "Ngày kết thúc HĐ (DD/MM/YYYY)": "31/12/2024",
+        "Tỷ lệ Khấu trừ (%)": 10,
+        "Phòng phụ trách": "QTTD 01",
+        "Khế ước vay": "KUV-01",
+        "Số tiền Giải ngân đợt 1 (VND)": 50000000,
+        "Ngày giải ngân (DD/MM/YYYY)": "05/01/2024",
+        "Ghi chú": "Hàng mẫu, vui lòng ghi đè lên"
+    }], columns=cols)
     
     towrite = io.BytesIO()
     with pd.ExcelWriter(towrite, engine='openpyxl') as writer:
@@ -816,18 +830,17 @@ def page_import_excel():
         from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
         
         # Define styles
-        header_fill_req = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid") # Red for required
-        header_fill_opt = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid") # Blue for optional
+        header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid") # Professional Blue for all headers
         header_font = Font(color="FFFFFF", bold=True, size=11)
         header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
         
+        sample_font = Font(italic=True, color="595959")
+        sample_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+        
         # Apply styles to headers
         for col_num, cell in enumerate(worksheet[1], 1):
-            if "(Bắt buộc)" in str(cell.value):
-                cell.fill = header_fill_req
-            else:
-                cell.fill = header_fill_opt
+            cell.fill = header_fill
             cell.font = header_font
             cell.alignment = header_alignment
             cell.border = thin_border
@@ -843,9 +856,23 @@ def page_import_excel():
         
         # Format columns as Text by default to avoid scientific notation on CIF/So HD
         for col in worksheet.columns:
-            for cell in col[1:100]: # apply to first 100 rows for template
-                cell.alignment = Alignment(vertical="center", wrap_text=True)
+            header_value = col[0].value
+            for row_idx, cell in enumerate(col[1:100], start=2): # apply to first 100 rows for template
                 cell.border = thin_border
+                
+                if row_idx == 2:
+                    cell.font = sample_font
+                    cell.fill = sample_fill
+                    
+                # Check if this column is an amount column
+                if "VND" in str(header_value):
+                    cell.number_format = '#,##0' # Format with thousand separator
+                    cell.alignment = Alignment(horizontal="right", vertical="center", wrap_text=True)
+                elif "Ngày" in str(header_value):
+                    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                else:
+                    cell.number_format = '@' # Force Text format
+                    cell.alignment = Alignment(vertical="center", wrap_text=True)
                 
     towrite.seek(0)
     
