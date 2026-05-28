@@ -734,24 +734,25 @@ def page_them_hop_dong():
             if not kh or not tu_amt or not ngay_gn:
                 st.error("Nhập đầy đủ Khách hàng, Số tiền và Ngày giải ngân đợt 1!")
             else:
-                ma_hd = db.generate_ma_hop_dong(kh, year=ngay_gn.year)
-                # Kiem tra neu hop dong da ton tai -> co the gop (nhung tam thoi tao moi theo form nay)
-                
-                db.add_hop_dong({
-                    "ma_hop_dong": ma_hd, "khach_hang": kh, "cif": cif_text, "don_vi_thu_huong": dvth,
-                    "so_hd": so_hd, "ngay_hop_dong": ngay_hd, "gia_tri_hd": gtri, "ngay_ket_thuc_hd": ngay_kt,
-                    "loai_tu": "mot_lan" if is_mot_lan else "khau_tru_dot",
-                    "loai_gia_tri_kt": loai_kt,
-                    "pct_khau_tru": pct, "phong_phu_trach": phong, "ghi_chu": ghi_chu, "khe_uoc_vay": khe_uoc_vay
-                }, user)
-                
-                ma_gn = db.generate_ma_giai_ngan(kh, year=ngay_gn.year)
-                db.add_tam_ung({
-                    "ma_giai_ngan": ma_gn, "ma_hop_dong": ma_hd,
-                    "so_tien_tu": tu_amt, "ngay_giai_ngan": ngay_gn, "ghi_chu": "Giải ngân lần 1"
-                }, user)
-                
-                st.success(f"✅ Tạo thành công Hợp đồng: {ma_hd} và Đợt giải ngân: {ma_gn}")
+                try:
+                    ma_hd = db.generate_ma_hop_dong(kh, year=ngay_gn.year)
+                    db.add_hop_dong({
+                        "ma_hop_dong": ma_hd, "khach_hang": kh, "cif": cif_text, "don_vi_thu_huong": dvth,
+                        "so_hd": so_hd, "ngay_hop_dong": ngay_hd, "gia_tri_hd": gtri, "ngay_ket_thuc_hd": ngay_kt,
+                        "loai_tu": "mot_lan" if is_mot_lan else "khau_tru_dot",
+                        "loai_gia_tri_kt": loai_kt,
+                        "pct_khau_tru": pct, "phong_phu_trach": phong, "ghi_chu": ghi_chu, "khe_uoc_vay": khe_uoc_vay
+                    }, user)
+                    
+                    ma_gn = db.generate_ma_giai_ngan(kh, year=ngay_gn.year)
+                    db.add_tam_ung({
+                        "ma_giai_ngan": ma_gn, "ma_hop_dong": ma_hd,
+                        "so_tien_tu": tu_amt, "ngay_giai_ngan": ngay_gn, "ghi_chu": "Giải ngân lần 1"
+                    }, user)
+                    
+                    st.success(f"🎉 Tạo thành công Hợp đồng: {ma_hd} và Đợt giải ngân: {ma_gn}")
+                except Exception as e:
+                    st.error(f"Lỗi cơ sở dữ liệu (IntegrityError): {e}")
 
 
 # ============ PAGE: DUYET HD CHO ============
