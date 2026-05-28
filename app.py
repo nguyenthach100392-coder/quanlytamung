@@ -895,34 +895,34 @@ def page_import_excel():
                             
                         # Tao ma HD
                         ma_hd = db.generate_ma_hop_dong(kh)
-                        db.add_hop_dong(
-                            ma_hd=ma_hd,
-                            khach_hang=kh,
-                            cif=str(row.get("Mã CIF", "")).strip() or None,
-                            don_vi_thu_huong=str(row.get("Đơn vị thụ hưởng", "")).strip() or None,
-                            so_hd=str(row.get("Số Hợp đồng", "")).strip() or None,
-                            gia_tri_hd=parse_vnd_input(row.get("Giá trị HĐ (VND)", "")) or None,
-                            ngay_hd=ngay_hd,
-                            ngay_ket_thuc_hd=ngay_kt,
-                            loai_tu="khau_tru_dot", # default
-                            loai_gia_tri_kt=None,
-                            pct_khau_tru=tlkt,
-                            phong_phu_trach=str(row.get("Phòng phụ trách", "")).strip() or "Khác",
-                            ghi_chu=str(row.get("Ghi chú", "")).strip() or None,
-                            khe_uoc_vay=str(row.get("Khế ước vay", "")).strip() or None,
-                            created_by=username
-                        )
+                        db.add_hop_dong({
+                            "ma_hop_dong": ma_hd,
+                            "khach_hang": kh,
+                            "cif": str(row.get("Mã CIF", "")).strip() or None,
+                            "don_vi_thu_huong": str(row.get("Đơn vị thụ hưởng", "")).strip() or None,
+                            "so_hd": str(row.get("Số Hợp đồng", "")).strip() or None,
+                            "gia_tri_hd": parse_vnd_input(row.get("Giá trị HĐ (VND)", "")) or None,
+                            "ngay_hop_dong": ngay_hd,
+                            "ngay_ket_thuc_hd": ngay_kt,
+                            "loai_tu": "khau_tru_dot", # default
+                            "loai_gia_tri_kt": None,
+                            "pct_khau_tru": tlkt,
+                            "phong_phu_trach": str(row.get("Phòng phụ trách", "")).strip() or "Khác",
+                            "ghi_chu": str(row.get("Ghi chú", "")).strip() or None,
+                            "khe_uoc_vay": str(row.get("Khế ước vay", "")).strip() or None,
+                            "created_by": username
+                        }, user)
                         
                         # Tao ma GN & add Tam Ung
                         ma_gn = db.generate_ma_giai_ngan(ma_hd)
-                        db.add_tam_ung(
-                            ma_giai_ngan=ma_gn,
-                            ma_hop_dong=ma_hd,
-                            so_tien_tu=tien_tu,
-                            ngay_giai_ngan=ngay_gn,
-                            ghi_chu=f"Import từ Excel - {str(row.get('Ghi chú', '')).strip()}",
-                            created_by=username
-                        )
+                        db.add_tam_ung({
+                            "ma_giai_ngan": ma_gn,
+                            "ma_hop_dong": ma_hd,
+                            "so_tien_tu": tien_tu,
+                            "ngay_giai_ngan": ngay_gn,
+                            "ghi_chu": f"Import từ Excel - {str(row.get('Ghi chú', '')).strip()}",
+                            "created_by": username
+                        }, user)
                         
                         success += 1
                     except Exception as e:
