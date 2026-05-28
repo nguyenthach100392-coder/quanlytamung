@@ -832,7 +832,7 @@ def page_import_excel():
             
             if st.button("🚀 Bắt đầu Import", type="primary"):
                 user = st.session_state["user"]
-                username = user["username"]
+                username = user
                 
                 success = 0
                 failed = 0
