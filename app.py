@@ -731,8 +731,8 @@ def page_them_hop_dong():
             kh = kh_new.strip() or (kh_select if kh_select != "--- Nhập mới ---" else "")
             dvth = dv_new.strip() or (dv_select if dv_select != "--- Nhập mới ---" else "")
             
-            if not kh or not tu_amt:
-                st.error("Nhập đầy đủ Khách hàng và Số tiền!")
+            if not kh or not tu_amt or not ngay_gn:
+                st.error("Nhập đầy đủ Khách hàng, Số tiền và Ngày giải ngân đợt 1!")
             else:
                 ma_hd = db.generate_ma_hop_dong(kh, year=ngay_gn.year)
                 # Kiem tra neu hop dong da ton tai -> co the gop (nhung tam thoi tao moi theo form nay)
