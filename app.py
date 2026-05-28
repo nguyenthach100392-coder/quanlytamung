@@ -173,9 +173,10 @@ def shorten_company_name(name):
     return (s[:15] + '..') if len(s) > 15 else s
 
 
-def compute_hd_status(r):
+def compute_hd_status(r, summary=None):
     today = date.today()
-    summary = db.calc_summary(r.get("ma_hop_dong"))
+    if summary is None:
+        summary = db.calc_summary(r.get("ma_hop_dong"))
     if not summary: return summary, "?"
     nkt = r.get("ngay_ket_thuc_hd")
     if isinstance(nkt, str):
@@ -230,8 +231,11 @@ def page_dashboard():
     qua_han = sap_han = hoan_tat = 0
     rows_display = []
     
+    # NEW: Fetch all summaries in one query to fix N+1 problem
+    summaries = db.bulk_calc_summary(hd_list)
+    
     for r in hd_list:
-        s, tt = compute_hd_status(r)
+        s, tt = compute_hd_status(r, summaries.get(r.get('ma_hop_dong')))
         total_gn += s.get("tong_giai_ngan")
         total_hd += s.get("hd_luy_ke")
         if tt == "Quá hạn": qua_han += 1

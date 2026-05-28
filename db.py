@@ -19,9 +19,19 @@ def get_conn():
 
 # Helper class to support `with get_conn() as c:` returning a DictCursor
 import contextlib
+from psycopg2.pool import ThreadedConnectionPool
+
+_pool = None
+def get_pool():
+    global _pool
+    if _pool is None:
+        _pool = ThreadedConnectionPool(1, 20, SUPABASE_URL)
+    return _pool
+
 @contextlib.contextmanager
 def get_conn():
-    conn = psycopg2.connect(SUPABASE_URL)
+    pool = get_pool()
+    conn = pool.getconn()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             yield cur
@@ -30,7 +40,7 @@ def get_conn():
         conn.rollback()
         raise
     finally:
-        conn.close()
+        pool.putconn(conn)
 
 def init_db():
     pass
@@ -446,3 +456,57 @@ def get_hoadons_by_date_str(date_str, phong=None):
                 ORDER BY uploaded_at DESC
             """, (date_str,))
             return c.fetchall()
+
+
+def bulk_calc_summary(hd_list):
+    ma_list = tuple([r.get('ma_hop_dong') for r in hd_list])
+    if not ma_list: return {}
+    
+    with get_conn() as c:
+        c.execute('SELECT ma_hop_dong, COALESCE(SUM(so_tien_tu), 0) as tong_gn, MIN(ngay_giai_ngan) as min_ngay FROM tam_ung WHERE ma_hop_dong IN %s GROUP BY ma_hop_dong', (ma_list,))
+        gn_rows = {r['ma_hop_dong']: r for r in c.fetchall()}
+        
+        c.execute('SELECT ma_hop_dong, COALESCE(SUM(kl_truoc_vat),0) as sum_kl, COALESCE(SUM(COALESCE(tong_cong, kl_truoc_vat)),0) as sum_tong FROM hstt WHERE ma_hop_dong IN %s GROUP BY ma_hop_dong', (ma_list,))
+        hstt_rows = {r['ma_hop_dong']: r for r in c.fetchall()}
+        
+        c.execute("SELECT ma_hop_dong, COALESCE(SUM(tien_truoc_vat),0) as sum_tien, COALESCE(SUM(COALESCE(tong_cong, tien_truoc_vat)),0) as sum_tong FROM hoa_don WHERE status='approved' AND ma_hop_dong IN %s GROUP BY ma_hop_dong", (ma_list,))
+        hd_rows = {r['ma_hop_dong']: r for r in c.fetchall()}
+        
+    res = {}
+    for hd in hd_list:
+        ma = hd.get('ma_hop_dong')
+        gn_row = gn_rows.get(ma)
+        if not gn_row:
+            tong_giai_ngan = 0
+            ngay_gn_dau = None
+        else:
+            tong_giai_ngan = gn_row['tong_gn']
+            ngay_gn_dau = gn_row['min_ngay']
+            
+        pct = (hd.get('pct_khau_tru') or 0) / 100.0
+        loai_kt = hd.get('loai_gia_tri_kt') if hd.get('loai_gia_tri_kt') else 'Trước VAT'
+        
+        hstt_row = hstt_rows.get(ma)
+        if not hstt_row: kt_luy_ke = 0
+        else:
+            if loai_kt == 'Sau VAT': kt_luy_ke = hstt_row['sum_tong'] * pct
+            else: kt_luy_ke = hstt_row['sum_kl'] * pct
+            
+        hd_pct = 1.0 if hd.get('loai_tu') == 'mot_lan' else pct
+        hd_loai_kt = 'Trước VAT' if hd.get('loai_tu') == 'mot_lan' else loai_kt
+        
+        hdr = hd_rows.get(ma)
+        if not hdr: hd_luy_ke = 0
+        else:
+            if hd_loai_kt == 'Sau VAT': hd_luy_ke = hdr['sum_tong'] * hd_pct
+            else: hd_luy_ke = hdr['sum_tien'] * hd_pct
+            
+        du = max(tong_giai_ngan - hd_luy_ke, 0)
+        res[ma] = {
+            'tong_giai_ngan': tong_giai_ngan,
+            'ngay_giai_ngan_dau': ngay_gn_dau,
+            'khau_tru_luy_ke': kt_luy_ke,
+            'hd_luy_ke': hd_luy_ke,
+            'du_can_bo_sung': du
+        }
+    return res
