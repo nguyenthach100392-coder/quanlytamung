@@ -629,7 +629,12 @@ def page_hop_dong():
                             confirm_mismatch = True
                         
                         c1, c2, c3 = st.columns([2, 1, 1])
-                        if c2.form_submit_button("✓ Xác nhận lưu", type="primary"):
+                        with c2:
+                            btn_save = st.form_submit_button("✓ Xác nhận lưu", type="primary", use_container_width=True)
+                        with c3:
+                            btn_del = st.form_submit_button("🗑️ Xóa file", use_container_width=True)
+                            
+                        if btn_save:
                             if mismatch and not confirm_mismatch:
                                 st.error("Vui lòng tick chọn Xác nhận hợp lệ ở bên trên!")
                             elif not so_hd or not tien:
@@ -643,7 +648,8 @@ def page_hop_dong():
                                 }, user, status="approved" if is_qttd else "pending")
                                 db.delete_staging(s.get("id"))
                                 st.rerun()
-                        if c3.form_submit_button("🗑️ Xóa file"):
+                                
+                        if btn_del:
                             db.delete_staging(s.get("id"))
                             st.rerun()
 

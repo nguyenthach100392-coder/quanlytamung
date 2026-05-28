@@ -511,3 +511,32 @@ def bulk_calc_summary(hd_list):
             'pct_hoan_thanh': hd_luy_ke / tong_giai_ngan if tong_giai_ngan else 0.0
         }
     return res
+
+def normalize_company_name(name):
+    """Chuan hoa ten cong ty de so sanh: bo tien to, loai hinh, uppercase, trim."""
+    s = name.strip().upper()
+    prefixes = [
+        r'CONG\s+TY\s+CO\s+PHAN\s+',
+        r'CONG\s+TY\s+TNHH\s+MTV\s+',
+        r'CONG\s+TY\s+TNHH\s+',
+        r'CONG\s+TY\s+CP\s+',
+        r'CONG\s+TY\s+',
+        r'CTCP\s+',
+        r'CTTNHH\s+',
+        r'CT\s+',
+        r'DOANH\s+NGHIEP\s+TU\s+NHAN\s+',
+        r'DOANH\s+NGHIEP\s+',
+        r'DNTN\s+',
+        r'DN\s+',
+    ]
+    for p in prefixes:
+        s2 = re.sub(r'^' + p, '', s, count=1)
+        if s2 != s:
+            s = s2
+            break
+    for kw in ['TNHH MTV', 'TNHH', 'CO PHAN', 'CP', 'MTV']:
+        s = re.sub(r'\b' + kw + r'\b', '', s)
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s
+
+
