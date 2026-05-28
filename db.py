@@ -4,171 +4,25 @@ import sqlite3
 import os
 import re
 from datetime import datetime, date
+import streamlit as st
 
-DB_PATH = os.environ.get("TAMUNG_DB", "tamung.db")
+DB_PATH = "tamung.db"
 
+def dict_factory(cursor, row):
+    d = {}
+    for idx, col in enumerate(cursor.description):
+        d[col[0]] = row[idx]
+        d[idx] = row[idx]
+    return d
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = dict_factory
     return conn
 
-
 def init_db():
-    """Khoi tao schema."""
-    conn = get_conn()
-    c = conn.cursor()
-    c.executescript("""
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL DEFAULT '123456',
-        full_name TEXT NOT NULL,
-        dept TEXT,
-        role TEXT NOT NULL CHECK (role IN ('phong_kh', 'qttd', 'admin')),
-        active INTEGER DEFAULT 1,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
+    pass
 
-    CREATE TABLE IF NOT EXISTS company_registry (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        company_name TEXT NOT NULL,
-        normalized_name TEXT NOT NULL,
-        company_seq INTEGER NOT NULL,
-        year INTEGER NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(year, company_seq),
-        UNIQUE(year, normalized_name)
-    );
-
-    CREATE TABLE IF NOT EXISTS hop_dong (
-        ma_hop_dong TEXT PRIMARY KEY,
-        khach_hang TEXT NOT NULL,
-        cif TEXT,
-        don_vi_thu_huong TEXT,
-        so_hd TEXT,
-        gia_tri_hd REAL,
-        ngay_ket_thuc_hd DATE NOT NULL,
-        loai_tu TEXT NOT NULL DEFAULT 'khau_tru_dot',
-        pct_khau_tru REAL DEFAULT 0.1,
-        phong_phu_trach TEXT,
-        ghi_chu TEXT,
-        created_by TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS tam_ung (
-        ma_giai_ngan TEXT PRIMARY KEY,
-        ma_hop_dong TEXT,
-        so_tien_tu REAL NOT NULL,
-        ngay_giai_ngan DATE NOT NULL,
-        ghi_chu TEXT,
-        created_by TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (ma_hop_dong) REFERENCES hop_dong(ma_hop_dong)
-    );
-
-    CREATE TABLE IF NOT EXISTS hstt (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ma_hop_dong TEXT NOT NULL,
-        dot_so INTEGER NOT NULL,
-        ngay_hstt DATE NOT NULL,
-        kl_truoc_vat REAL NOT NULL,
-        ghi_chu TEXT,
-        created_by TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (ma_hop_dong) REFERENCES hop_dong(ma_hop_dong),
-        UNIQUE(ma_hop_dong, dot_so)
-    );
-
-    CREATE TABLE IF NOT EXISTS hoa_don (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ma_hop_dong TEXT NOT NULL,
-        dot_so INTEGER NOT NULL DEFAULT 1,
-        so_hd TEXT NOT NULL,
-        ngay_hd DATE NOT NULL,
-        mst_ban TEXT,
-        ten_ban TEXT,
-        tien_truoc_vat REAL NOT NULL,
-        vat REAL NOT NULL,
-        tong_cong REAL,
-        ma_tra_cuu TEXT,
-        file_src TEXT,
-        status TEXT DEFAULT 'approved',
-        uploaded_by TEXT,
-        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        approved_by TEXT,
-        approved_at TIMESTAMP,
-        ghi_chu TEXT,
-        FOREIGN KEY (ma_hop_dong) REFERENCES hop_dong(ma_hop_dong)
-    );
-
-    CREATE TABLE IF NOT EXISTS staging_hd (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ma_hop_dong TEXT,
-        dot_so INTEGER,
-        so_hd TEXT,
-        ngay_hd DATE,
-        mst_ban TEXT,
-        ten_ban TEXT,
-        tien_truoc_vat REAL,
-        vat REAL,
-        tong_cong REAL,
-        ma_tra_cuu TEXT,
-        file_src TEXT,
-        parse_status TEXT,
-        uploaded_by TEXT,
-        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS audit_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        action TEXT NOT NULL,
-        entity TEXT,
-        entity_id TEXT,
-        username TEXT,
-        details TEXT,
-        ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-    """)
-
-    # Seed default users
-    c.execute("SELECT COUNT(*) FROM users")
-    if c.fetchone()[0] == 0:
-        c.executemany(
-            "INSERT INTO users (username, password, full_name, dept, role) VALUES (?,?,?,?,?)",
-            [
-                ("admin", "admin@123", "Quan tri he thong", "QTTD", "admin"),
-                ("qttd01", "qttd01@123", "Can bo QTTD 01", "QTTD", "qttd"),
-            ]
-        )
-        
-    # Xóa 2 user mặc định cũ không cần dùng nữa (để nó biến mất trên Web)
-    c.execute("DELETE FROM users WHERE username IN ('phongkh_dn', 'phongkh_sme')")
-    
-    # Fix dữ liệu cũ: lúc trước pct_khau_tru lưu dưới dạng thập phân (vd: 0.1), giờ đổi thành phần trăm (10.0)
-    c.execute("UPDATE hop_dong SET pct_khau_tru = pct_khau_tru * 100 WHERE pct_khau_tru < 1.0 AND pct_khau_tru > 0")
-        
-    # MIGRATIONS: Add new columns if they don't exist
-    def add_col_if_not_exists(table, col_name, col_type):
-        c.execute(f"PRAGMA table_info({table})")
-        cols = [r["name"] for r in c.fetchall()]
-        if col_name not in cols:
-            c.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
-
-    add_col_if_not_exists("hop_dong", "cif", "TEXT")
-    add_col_if_not_exists("hop_dong", "don_vi_thu_huong", "TEXT")
-    add_col_if_not_exists("hop_dong", "loai_gia_tri_kt", "TEXT")
-    add_col_if_not_exists("hstt", "vat", "REAL")
-    add_col_if_not_exists("hstt", "tong_cong", "REAL")
-    add_col_if_not_exists("hstt", "loai_kl", "TEXT")
-    
-    conn.commit()
-    conn.close()
-
-
-# ---- Company name normalization ----
 def normalize_company_name(name):
     """Chuan hoa ten cong ty de so sanh: bo tien to, loai hinh, uppercase, trim."""
     s = name.strip().upper()
@@ -294,12 +148,12 @@ def add_hop_dong(data, user):
     with get_conn() as c:
         c.execute("""INSERT INTO hop_dong
             (ma_hop_dong, khach_hang, cif, don_vi_thu_huong, so_hd, gia_tri_hd,
-             ngay_ket_thuc_hd, loai_tu, loai_gia_tri_kt, pct_khau_tru, phong_phu_trach, ghi_chu, created_by)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             ngay_hop_dong, ngay_ket_thuc_hd, loai_tu, loai_gia_tri_kt, pct_khau_tru, phong_phu_trach, ghi_chu, khe_uoc_vay, created_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (data["ma_hop_dong"], data["khach_hang"], data.get("cif"), data.get("don_vi_thu_huong"), data.get("so_hd"),
-             data.get("gia_tri_hd"), data["ngay_ket_thuc_hd"],
+             data.get("gia_tri_hd"), data.get("ngay_hop_dong"), data["ngay_ket_thuc_hd"],
              data.get("loai_tu", "khau_tru_dot"), data.get("loai_gia_tri_kt", "Trước VAT"),
-             data.get("pct_khau_tru", 10.0), data.get("phong_phu_trach"), data.get("ghi_chu"), user))
+             data.get("pct_khau_tru", 10.0), data.get("phong_phu_trach"), data.get("ghi_chu"), data.get("khe_uoc_vay"), user))
         c.commit()
         log(c, "ADD_HOP_DONG", "hop_dong", data["ma_hop_dong"], user, "")
 
@@ -525,3 +379,51 @@ def log(conn, action, entity, entity_id, username, details):
 def recent_audit(limit=50):
     with get_conn() as c:
         return c.execute("SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
+
+def add_dashboard_logs(data, user):
+    with get_conn() as c:
+        c.execute("""INSERT INTO dashboard_logs
+            (loai_hoat_dong, chi_tiet, ma_hop_dong, created_by)
+            VALUES (?,?,?,?)""",
+            (data.get("loai_hoat_dong"), data.get("chi_tiet"), data.get("ma_hop_dong"), user))
+        c.commit()
+
+def list_dashboard_logs(limit=20):
+    with get_conn() as c:
+        return c.execute("SELECT * FROM dashboard_logs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+
+def get_distinct_upload_dates(phong=None):
+    with get_conn() as c:
+        if phong:
+            cur = c.execute("""
+                SELECT DISTINCT date(h.uploaded_at, '+7 hours') as d 
+                FROM hoa_don h
+                JOIN hop_dong hd ON h.ma_hop_dong = hd.ma_hop_dong
+                WHERE h.uploaded_at IS NOT NULL AND hd.phong_phu_trach = ?
+                ORDER BY d DESC
+            """, (phong,))
+        else:
+            cur = c.execute("""
+                SELECT DISTINCT date(uploaded_at, '+7 hours') as d 
+                FROM hoa_don 
+                WHERE uploaded_at IS NOT NULL
+                ORDER BY d DESC
+            """)
+        return [r["d"] for r in cur.fetchall() if r["d"]]
+
+def get_hoadons_by_date_str(date_str, phong=None):
+    with get_conn() as c:
+        if phong:
+            return c.execute("""
+                SELECT h.* 
+                FROM hoa_don h
+                JOIN hop_dong hd ON h.ma_hop_dong = hd.ma_hop_dong
+                WHERE date(h.uploaded_at, '+7 hours') = ? AND hd.phong_phu_trach = ?
+                ORDER BY h.uploaded_at DESC
+            """, (date_str, phong)).fetchall()
+        else:
+            return c.execute("""
+                SELECT * FROM hoa_don 
+                WHERE date(uploaded_at, '+7 hours') = ?
+                ORDER BY uploaded_at DESC
+            """, (date_str,)).fetchall()

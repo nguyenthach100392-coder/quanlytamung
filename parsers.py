@@ -55,6 +55,11 @@ def _parse_date(text):
         d, mo, y = m.groups()
         try: return datetime(int(y), int(mo), int(d)).date()
         except: pass
+    m = re.search(r"Ng[aà]y[^\d]*(\d{1,2})[^\d]*th[aá]ng[^\d]*(\d{1,2})[^\d]*n[aă]m[^\d]*(\d{4})", text, re.IGNORECASE)
+    if m:
+        d, mo, y = m.groups()
+        try: return datetime(int(y), int(mo), int(d)).date()
+        except: pass
     return None
 
 
@@ -110,9 +115,9 @@ def parse_xml(path_or_bytes, filename=None):
     mtc = _findtext_any(root, ["MCCQT", "MaTraCuu"])
     if mtc: result["ma_tra_cuu"] = mtc
 
-    ms = _findtext_any(root, ["KHMSHDon", "MauSo", "MauSoHD"])
+    ms = _findtext_any(root, ["KHMSHDon", "MauSo", "MauSoHD", "MSo"])
     if ms: result["mau_so_hd"] = ms
-    kh = _findtext_any(root, ["KHHDon", "KyHieu", "KyHieuHD"])
+    kh = _findtext_any(root, ["KHHDon", "KyHieu", "KyHieuHD", "KHieu"])
     if kh: result["ky_hieu_hd"] = kh
 
     missing = [k for k in ("so_hd","ngay_hd","tien_truoc_vat","vat") if not result.get(k)]
@@ -143,29 +148,52 @@ def parse_pdf(path_or_bytes, filename=None):
         result["parse_status"] = f"Loi PDF: {e}"
         return result
 
-    m = re.search(r"S[ốo][:\s]+(\w[\w/-]*)", text)
+    # Ky hieu
+    m = re.search(r"K[ýy]\s*hi[ệe]u[^:]*[:\s]+([A-Z0-9]+)", text, re.IGNORECASE)
+    if m: result["ky_hieu_hd"] = m.group(1).strip()
+
+    # Mau so
+    m = re.search(r"M[ẫa]u\s*s[ốo][^:]*[:\s]+([A-Z0-9]+)", text, re.IGNORECASE)
+    if m: result["mau_so_hd"] = m.group(1).strip()
+
+    # So HD
+    m = re.search(r"(?:S[ốo]\s*h[óo]a\s*đ[ơo]n|S[ốo]\s*\(No\.\)|S[ốo]\s*\/No|S[ốo]\s*:)\s*([0-9]+)", text, re.IGNORECASE)
+    if not m:
+        m = re.search(r"S[ốo]\s*(?:h[óo]a\s*đ[ơo]n|\(No\.?\))?[^a-zA-Z0-9:]*[:\s]+([0-9]+)", text, re.IGNORECASE)
     if m: result["so_hd"] = m.group(1).strip()
+
     result["ngay_hd"] = _parse_date(text)
 
-    m = re.search(r"M[aã]\s*s[ốo]\s*thu[ếe][:\s]+(\d{10}(?:-\d{3})?)", text, re.IGNORECASE)
+    # MST Ban
+    m = re.search(r"M[aã]\s*s[ốo]\s*thu[ếe][^:]*[:\s]+(\d{10}(?:-\d{3})?)", text, re.IGNORECASE)
     if m: result["mst_ban"] = m.group(1)
-    m = re.search(r"(?:Đ[ơo]n v[ịi] b[áa]n h[àa]ng|T[êe]n ng[ưu][ờo]i b[áa]n|Seller)[:\s]+(.+)", text)
+
+    # Ten Ban
+    m = re.search(r"(?:Đ[ơo]n v[ịi] b[áa]n h[àa]ng|T[êe]n ng[ưu][ờo]i b[áa]n|Seller)[^:]*[:\s]+(.+)", text, re.IGNORECASE)
     if m: result["ten_ban"] = m.group(1).split("\n")[0].strip()[:100]
 
-    for p in [r"C[ộo]ng ti[ềe]n h[àa]ng[:\s]*([\d.,]+)",
-              r"T[ổo]ng ti[ềe]n\s*\(?ch[ưu]a[^)]*thu[ếe][^)]*\)?[:\s]*([\d.,]+)",
-              r"T[ổo]ng ti[ềe]n h[àa]ng[:\s]*([\d.,]+)"]:
+    # Tien truoc vat
+    for p in [r"C[ộo]ng ti[ềe]n h[àa]ng[^:]*[:\s]*([\d.,]+)",
+              r"T[ổo]ng ti[ềe]n\s*\(?ch[ưu]a[^)]*thu[ếe][^)]*\)?[^:]*[:\s]*([\d.,]+)",
+              r"T[ổo]ng ti[ềe]n h[àa]ng[^:]*[:\s]*([\d.,]+)"]:
         m = re.search(p, text, re.IGNORECASE)
         if m: result["tien_truoc_vat"] = _num(m.group(1)); break
-    for p in [r"Ti[ềe]n thu[ếe]\s*GTGT[:\s]*([\d.,]+)",
-              r"Thu[ếe]\s*GTGT[:\s]*([\d.,]+)"]:
+
+    # VAT
+    for p in [r"Ti[ềe]n thu[ếe]\s*GTGT[^:]*[:\s]*([\d.,]+)",
+              r"Thu[ếe]\s*GTGT[^:]*[:\s]*([\d.,]+)"]:
         m = re.search(p, text, re.IGNORECASE)
         if m: result["vat"] = _num(m.group(1)); break
-    for p in [r"T[ổo]ng c[ộo]ng\s*ti[ềe]n\s*thanh\s*to[áa]n[:\s]*([\d.,]+)",
-              r"T[ổo]ng\s*thanh\s*to[áa]n[:\s]*([\d.,]+)"]:
+
+    # Tong cong
+    for p in [r"T[ổo]ng c[ộo]ng\s*ti[ềe]n\s*thanh\s*to[áa]n[^:]*[:\s]*([\d.,]+)",
+              r"T[ổo]ng\s*thanh\s*to[áa]n[^:]*[:\s]*([\d.,]+)",
+              r"T[ổo]ng c[ộo]ng[^:]*[:\s]*([\d.,]+)"]:
         m = re.search(p, text, re.IGNORECASE)
         if m: result["tong_cong"] = _num(m.group(1)); break
-    m = re.search(r"M[ãa]\s*tra\s*c[ứu]u[:\s]+(\w+)", text, re.IGNORECASE)
+
+    # Ma tra cuu
+    m = re.search(r"(?:M[ãa]\s*tra\s*c[ứu]u|M[ãa]\s*s[ốo]\s*b[íi]\s*m[ậa]t|M[ãa]\s*c[ủa]a\s*c[ơo]\s*quan\s*thu[ếe])[^:]*[:\s]+([A-Z0-9]+)", text, re.IGNORECASE)
     if m: result["ma_tra_cuu"] = m.group(1)
 
     missing = [k for k in ("so_hd","ngay_hd","tien_truoc_vat","vat") if not result.get(k)]

@@ -65,10 +65,16 @@ with st.sidebar:
     if is_qttd:
         menu_items = [
             "📊 Dashboard",
-            "➕ Thêm Hợp đồng Tạm ứng",
+        ]
+        if user != "qttd01":
+            menu_items.extend([
+                "➕ Thêm Hợp đồng Tạm ứng",
+                "📥 Import Hợp đồng (Excel)",
+            ])
+        menu_items.extend([
             "💼 Quản lý Hợp đồng",
             "✅ Duyệt HĐ chờ",
-        ]
+        ])
         if role == "admin":
             menu_items.append("📥 Up hóa đơn theo lô")
         menu_items.extend([
@@ -178,16 +184,24 @@ def page_dashboard():
     # --- Filters ---
     kh_list = sorted(list(set([r["khach_hang"] for r in hd_list if r["khach_hang"]])))
     dvth_list = sorted(list(set([r["don_vi_thu_huong"] for r in hd_list if r["don_vi_thu_huong"]])))
+    phong_list = sorted(list(set([r["phong_phu_trach"] for r in hd_list if r["phong_phu_trach"]])))
     
     with st.expander("🔍 Lọc dữ liệu", expanded=False):
         c1, c2 = st.columns(2)
         kh_filters = c1.multiselect("Khách hàng", kh_list)
-        dvth_filters = c2.multiselect("Đơn vị thụ hưởng", dvth_list)
+        if is_qttd:
+            phong_filters = c2.multiselect("Phòng quản lý", phong_list)
+            dvth_filters = []
+        else:
+            dvth_filters = c2.multiselect("Đơn vị thụ hưởng", dvth_list)
+            phong_filters = []
         
     if kh_filters:
         hd_list = [r for r in hd_list if r["khach_hang"] in kh_filters]
     if dvth_filters:
         hd_list = [r for r in hd_list if r["don_vi_thu_huong"] in dvth_filters]
+    if phong_filters:
+        hd_list = [r for r in hd_list if r["phong_phu_trach"] in phong_filters]
 
     total_gn = 0
     total_hd = 0
@@ -323,16 +337,21 @@ def page_hop_dong():
                 db.delete_hop_dong(selected['ma_hop_dong'], user)
                 st.rerun()
         c1, c2, c3, c4 = st.columns(4)
-        c1.markdown(f"**Mã giải ngân:** `{selected['ma_hop_dong']}`")
+        khe_uoc = selected['khe_uoc_vay'] if 'khe_uoc_vay' in selected.keys() and selected['khe_uoc_vay'] else '-'
+        c1.markdown(f"**Mã giải ngân:** `{selected['ma_hop_dong']}`<br>**Khế ước vay:** {khe_uoc}", unsafe_allow_html=True)
         c2.markdown(f"**Khách hàng:** {selected['khach_hang']} " + (f"(CIF: `{selected['cif']}`)" if selected['cif'] else ""))
         c3.markdown(f"**Trạng thái:** {status_badge(tt)}")
         c4.markdown(f"**Loại:** {'Khấu trừ từng đợt' if loai == 'khau_tru_dot' else 'Thanh toán 1 lần'}")
 
         c1, c2, c3, c4 = st.columns(4)
         c1.markdown(f"**Số hợp đồng:** {selected['so_hd'] or '-'}")
-        c2.markdown(f"**ĐV thụ hưởng:** {selected['don_vi_thu_huong'] or '-'}")
-        c3.markdown(f"**Ngày kết thúc hợp đồng:** {fmt_date(selected['ngay_ket_thuc_hd'])}")
-        c4.markdown(f"**Phòng phụ trách:** {selected['phong_phu_trach'] or '-'}")
+        ngay_hd_val = selected['ngay_hop_dong'] if 'ngay_hop_dong' in selected.keys() else None
+        c2.markdown(f"**Ngày hợp đồng:** {fmt_date(ngay_hd_val) if ngay_hd_val else '-'}")
+        c3.markdown(f"**ĐV thụ hưởng:** {selected['don_vi_thu_huong'] or '-'}")
+        c4.markdown(f"**Ngày kết thúc hợp đồng:** {fmt_date(selected['ngay_ket_thuc_hd'])}")
+        
+        c_p = st.container()
+        c_p.markdown(f"**Phòng phụ trách:** {selected['phong_phu_trach'] or '-'}")
         
         if selected["ghi_chu"]:
             st.markdown(f"**Ghi chú:** {selected['ghi_chu']}")
@@ -657,7 +676,7 @@ def page_them_hop_dong():
     is_mot_lan = loai_tu == "Thanh toán 1 lần"
     companies = db.list_distinct_companies()
 
-    with st.form("them_hd_form"):
+    with st.container():
         c1, c2 = st.columns(2)
         kh_select = c1.selectbox("Chọn KH đã có", ["--- Nhập mới ---"] + companies) if companies else "--- Nhập mới ---"
         kh_new = c2.text_input("Hoặc nhập tên mới")
@@ -668,13 +687,31 @@ def page_them_hop_dong():
         dv_select = c1.selectbox("Đơn vị thụ hưởng", ["--- Nhập mới ---"] + companies) if companies else "--- Nhập mới ---"
         dv_new = c2.text_input("Hoặc nhập ĐVTH mới")
         
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         so_hd = c1.text_input("Số hợp đồng *")
-        phong = uinfo["dept"] if is_phong_kh else c2.selectbox("Phòng phụ trách", ["PGD Hàng Xanh", "PGD Đinh Tiên Hoàng", "PGD Đakao", "PGD Nguyễn Oanh", "PGD Tân Thới Hiệp", "KHDN1", "KHDN2", "KH FDI"])
+        ngay_hd = c2.date_input("Ngày hợp đồng", value=date.today(), format="DD/MM/YYYY")
+        phong = uinfo["dept"] if is_phong_kh else c3.selectbox("Phòng phụ trách", ["PGD Hàng Xanh", "PGD Đinh Tiên Hoàng", "PGD Đakao", "PGD Nguyễn Oanh", "PGD Tân Thới Hiệp", "KHDN1", "KHDN2", "KH FDI"])
         
+        def format_currency(key):
+            val = st.session_state.get(key, "")
+            if val:
+                num = parse_vnd_input(val)
+                if num and num > 0:
+                    if num.is_integer():
+                        st.session_state[key] = f"{int(num):,}".replace(",", ".")
+                    else:
+                        st.session_state[key] = f"{num:,}".replace(",", ".")
+                else:
+                    st.session_state[key] = ""
+
         c1, c2 = st.columns(2)
-        gtri_text = c1.text_input("Giá trị HĐ (VND)")
-        tu_text = c2.text_input("Số tiền tạm ứng Đợt 1 *")
+        if "gtri_input" not in st.session_state:
+            st.session_state["gtri_input"] = ""
+        if "tu_input" not in st.session_state:
+            st.session_state["tu_input"] = ""
+
+        gtri_text = c1.text_input("Giá trị HĐ (VND)", key="gtri_input", on_change=format_currency, args=("gtri_input",))
+        tu_text = c2.text_input("Số tiền tạm ứng Đợt 1 *", key="tu_input", on_change=format_currency, args=("tu_input",))
         
         c1, c2 = st.columns(2)
         ngay_gn = c1.date_input("Ngày giải ngân đợt 1", value=date.today(), format="DD/MM/YYYY")
@@ -683,12 +720,14 @@ def page_them_hop_dong():
         c1, c2 = st.columns(2)
         pct = 0.0 if is_mot_lan else c1.number_input("% Khấu trừ/đợt", value=10.0, step=1.0)
         loai_kt = "" if is_mot_lan else c2.radio("Tính khấu trừ theo", ["Trước VAT", "Sau VAT"], horizontal=True)
+        
+        khe_uoc_vay = st.text_input("Số Khế ước vay")
         ghi_chu = st.text_area("Ghi chú")
         
         gtri = parse_vnd_input(gtri_text)
         tu_amt = parse_vnd_input(tu_text)
 
-        if st.form_submit_button("➕ Lưu Hợp đồng & Giải ngân đợt 1", type="primary"):
+        if st.button("➕ Lưu Hợp đồng & Giải ngân đợt 1", type="primary"):
             kh = kh_new.strip() or (kh_select if kh_select != "--- Nhập mới ---" else "")
             dvth = dv_new.strip() or (dv_select if dv_select != "--- Nhập mới ---" else "")
             
@@ -700,10 +739,10 @@ def page_them_hop_dong():
                 
                 db.add_hop_dong({
                     "ma_hop_dong": ma_hd, "khach_hang": kh, "cif": cif_text, "don_vi_thu_huong": dvth,
-                    "so_hd": so_hd, "gia_tri_hd": gtri, "ngay_ket_thuc_hd": ngay_kt,
+                    "so_hd": so_hd, "ngay_hop_dong": ngay_hd, "gia_tri_hd": gtri, "ngay_ket_thuc_hd": ngay_kt,
                     "loai_tu": "mot_lan" if is_mot_lan else "khau_tru_dot",
                     "loai_gia_tri_kt": loai_kt,
-                    "pct_khau_tru": pct, "phong_phu_trach": phong, "ghi_chu": ghi_chu
+                    "pct_khau_tru": pct, "phong_phu_trach": phong, "ghi_chu": ghi_chu, "khe_uoc_vay": khe_uoc_vay
                 }, user)
                 
                 ma_gn = db.generate_ma_giai_ngan(kh, year=ngay_gn.year)
@@ -740,58 +779,244 @@ def page_duyet_hd():
                     db.reject_hoa_don(h["id"], user, "Từ chối")
                     st.rerun()
 
+
+# ============ PAGE: IMPORT EXCEL ============
+def page_import_excel():
+    st.title("📥 Import Danh Sách Hợp Đồng Từ Excel")
+    st.write("Chức năng này giúp tạo hàng loạt Hợp đồng & Đợt Tạm ứng đầu tiên từ file Excel.")
+    
+    # Tạo File Mẫu
+    import io
+    import pandas as pd
+    
+    cols = [
+        "Khách hàng (Bắt buộc)",
+        "Mã CIF",
+        "Đơn vị thụ hưởng",
+        "Số Hợp đồng",
+        "Ngày Hợp đồng (DD/MM/YYYY)",
+        "Giá trị HĐ (VND)",
+        "Ngày kết thúc HĐ (DD/MM/YYYY) (Bắt buộc)",
+        "Tỷ lệ Khấu trừ (%) (Bắt buộc)",
+        "Phòng phụ trách",
+        "Khế ước vay",
+        "Số tiền Giải ngân đợt 1 (VND) (Bắt buộc)",
+        "Ngày giải ngân (DD/MM/YYYY) (Bắt buộc)",
+        "Ghi chú"
+    ]
+    df_template = pd.DataFrame(columns=cols)
+    
+    towrite = io.BytesIO()
+    df_template.to_excel(towrite, index=False, engine='openpyxl')
+    towrite.seek(0)
+    
+    st.download_button(
+        label="⬇️ Tải File Excel Mẫu",
+        data=towrite,
+        file_name="Template_Import_HopDong.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    
+    st.divider()
+    st.subheader("Tải lên File Excel đã điền")
+    
+    uploaded_file = st.file_uploader("Chọn file Excel (.xlsx)", type=["xlsx"])
+    if uploaded_file is not None:
+        try:
+            df = pd.read_excel(uploaded_file, dtype=str)
+            df = df.fillna("")
+            
+            # Đổi tên cột cho dễ xử lý nội bộ nếu cần, hoặc dùng index/tên cột đầy đủ
+            st.write(f"**Đã tải lên {len(df)} dòng dữ liệu.** Xem trước:")
+            st.dataframe(df.head(5))
+            
+            if st.button("🚀 Bắt đầu Import", type="primary"):
+                user = st.session_state["user"]
+                username = user["username"]
+                
+                success = 0
+                failed = 0
+                errors = []
+                
+                progress_bar = st.progress(0)
+                
+                for idx, row in df.iterrows():
+                    try:
+                        kh = str(row.get("Khách hàng (Bắt buộc)", "")).strip()
+                        if not kh:
+                            failed += 1
+                            errors.append(f"Dòng {idx+2}: Thiếu tên Khách hàng.")
+                            continue
+                            
+                        tien_tu_str = str(row.get("Số tiền Giải ngân đợt 1 (VND) (Bắt buộc)", "")).strip()
+                        tien_tu = parse_vnd_input(tien_tu_str)
+                        if not tien_tu:
+                            failed += 1
+                            errors.append(f"Dòng {idx+2}: Thiếu/sai định dạng Số tiền giải ngân.")
+                            continue
+                            
+                        tlkt_str = str(row.get("Tỷ lệ Khấu trừ (%) (Bắt buộc)", "")).strip()
+                        if not tlkt_str:
+                            failed += 1
+                            errors.append(f"Dòng {idx+2}: Thiếu Tỷ lệ khấu trừ.")
+                            continue
+                        try:
+                            tlkt = float(tlkt_str.replace("%","").replace(",","."))
+                        except:
+                            failed += 1
+                            errors.append(f"Dòng {idx+2}: Sai định dạng Tỷ lệ khấu trừ.")
+                            continue
+                            
+                        ngay_kt_str = str(row.get("Ngày kết thúc HĐ (DD/MM/YYYY) (Bắt buộc)", "")).strip()
+                        ngay_kt = None
+                        try:
+                            if ngay_kt_str: ngay_kt = datetime.strptime(ngay_kt_str, "%d/%m/%Y").date()
+                        except: pass
+                        if not ngay_kt:
+                            failed += 1
+                            errors.append(f"Dòng {idx+2}: Thiếu/sai định dạng Ngày kết thúc HĐ.")
+                            continue
+                            
+                        ngay_gn_str = str(row.get("Ngày giải ngân (DD/MM/YYYY) (Bắt buộc)", "")).strip()
+                        ngay_gn = None
+                        try:
+                            if ngay_gn_str: ngay_gn = datetime.strptime(ngay_gn_str, "%d/%m/%Y").date()
+                        except: pass
+                        if not ngay_gn:
+                            failed += 1
+                            errors.append(f"Dòng {idx+2}: Thiếu/sai định dạng Ngày giải ngân.")
+                            continue
+                            
+                        ngay_hd_str = str(row.get("Ngày Hợp đồng (DD/MM/YYYY)", "")).strip()
+                        ngay_hd = None
+                        try:
+                            if ngay_hd_str: ngay_hd = datetime.strptime(ngay_hd_str, "%d/%m/%Y").date()
+                        except: pass
+                            
+                        # Tao ma HD
+                        ma_hd = db.generate_ma_hop_dong(kh)
+                        db.add_hop_dong(
+                            ma_hd=ma_hd,
+                            khach_hang=kh,
+                            cif=str(row.get("Mã CIF", "")).strip() or None,
+                            don_vi_thu_huong=str(row.get("Đơn vị thụ hưởng", "")).strip() or None,
+                            so_hd=str(row.get("Số Hợp đồng", "")).strip() or None,
+                            gia_tri_hd=parse_vnd_input(row.get("Giá trị HĐ (VND)", "")) or None,
+                            ngay_hd=ngay_hd,
+                            ngay_ket_thuc_hd=ngay_kt,
+                            loai_tu="khau_tru_dot", # default
+                            loai_gia_tri_kt=None,
+                            pct_khau_tru=tlkt,
+                            phong_phu_trach=str(row.get("Phòng phụ trách", "")).strip() or "Khác",
+                            ghi_chu=str(row.get("Ghi chú", "")).strip() or None,
+                            khe_uoc_vay=str(row.get("Khế ước vay", "")).strip() or None,
+                            created_by=username
+                        )
+                        
+                        # Tao ma GN & add Tam Ung
+                        ma_gn = db.generate_ma_giai_ngan(ma_hd)
+                        db.add_tam_ung(
+                            ma_giai_ngan=ma_gn,
+                            ma_hop_dong=ma_hd,
+                            so_tien_tu=tien_tu,
+                            ngay_giai_ngan=ngay_gn,
+                            ghi_chu=f"Import từ Excel - {str(row.get('Ghi chú', '')).strip()}",
+                            created_by=username
+                        )
+                        
+                        success += 1
+                    except Exception as e:
+                        failed += 1
+                        errors.append(f"Dòng {idx+2}: Lỗi hệ thống ({str(e)})")
+                    
+                    progress_bar.progress(int(((idx+1) / len(df)) * 100))
+                
+                # Hoan tat
+                progress_bar.empty()
+                if success > 0:
+                    st.success(f"🎉 Đã import thành công {success} Hợp đồng!")
+                    db.log_action("IMPORT_EXCEL", "hop_dong", f"{success} HD", username, f"Import thanh cong {success} HD tu file")
+                if failed > 0:
+                    st.error(f"❌ Thất bại {failed} dòng. Chi tiết:")
+                    for err in errors:
+                        st.write(f"- {err}")
+                        
+        except Exception as e:
+            st.error(f"Lỗi đọc file Excel: {e}")
+
 # ============ PAGE: UPLOAD THEO LO ============
 def page_upload_lo():
     st.title("📥 Up hóa đơn điện tử theo lô")
     st.write("Tải lên hàng loạt file XML hóa đơn và xuất ra mẫu Excel hệ thống.")
     
     phong_filter = None if is_qttd else uinfo["dept"]
-    all_rows = db.list_hop_dong(phong=phong_filter)
-    if not all_rows:
-        st.warning("Chưa có Hợp đồng nào trong hệ thống.")
-        return
-        
-    options = {}
-    for r in all_rows:
-        s, tt = compute_hd_status(r)
-        kh_short = shorten_company_name(r['khach_hang'])
-        dv_short = shorten_company_name(r['don_vi_thu_huong'])
-        so_hd = r['so_hd'] or "Chưa rõ"
-        tien = f"{fmt_vnd_dot(s['tong_giai_ngan'])}đ" if s['tong_giai_ngan'] else "0đ"
-        
-        display_name = f"{kh_short} - HĐ: {so_hd} - GN: {tien}"
-        if dv_short: display_name += f" - ĐVTH: {dv_short}"
-        options[display_name] = r
-        
-    choice = st.selectbox("📌 Chọn Hợp đồng để xem Hóa đơn:", list(options.keys()))
-    selected = options[choice]
     
-    # Lay ngay giai ngan de fill cot N
-    tus = db.list_tam_ung(selected["ma_hop_dong"])
-    ngay_gn_dau = tus[0]["ngay_giai_ngan"] if tus else date.today()
+    mode = st.radio("Chế độ chọn", ["Theo Hợp đồng", "Theo Ngày bổ sung"], horizontal=True)
     
-    # Lay danh sach hoa don cua hop dong nay
-    hoadons = db.list_hoa_don(ma_hop_dong=selected["ma_hop_dong"])
-    if not hoadons:
-        st.info("Chưa có hóa đơn nào được tải lên cho Hợp đồng này. Vui lòng bổ sung hóa đơn ở menu Danh sách Hợp đồng trước.")
-        return
+    selected_contract = None
+    date_choice = None
+    
+    if mode == "Theo Hợp đồng":
+        all_rows = db.list_hop_dong(phong=phong_filter)
+        if not all_rows:
+            st.warning("Chưa có Hợp đồng nào trong hệ thống.")
+            return
+            
+        options = {}
+        for r in all_rows:
+            s, tt = compute_hd_status(r)
+            kh_short = shorten_company_name(r['khach_hang'])
+            dv_short = shorten_company_name(r['don_vi_thu_huong'])
+            so_hd = r['so_hd'] or "Chưa rõ"
+            tien = f"{fmt_vnd_dot(s['tong_giai_ngan'])}đ" if s['tong_giai_ngan'] else "0đ"
+            
+            display_name = f"{kh_short} - HĐ: {so_hd} - GN: {tien}"
+            if dv_short: display_name += f" - ĐVTH: {dv_short}"
+            options[display_name] = r
+            
+        choice = st.selectbox("📌 Chọn Hợp đồng để xem Hóa đơn:", list(options.keys()))
+        selected_contract = options[choice]
+        hoadons = db.list_hoa_don(ma_hop_dong=selected_contract["ma_hop_dong"])
+        if not hoadons:
+            st.info("Chưa có hóa đơn nào được tải lên cho Hợp đồng này. Vui lòng bổ sung hóa đơn ở menu Danh sách Hợp đồng trước.")
+            return
+    else:
+        dates = db.get_distinct_upload_dates(phong=phong_filter)
+        if not dates:
+            st.warning("Chưa có Hóa đơn nào được upload.")
+            return
+        
+        date_choice = st.selectbox("📌 Chọn Ngày bổ sung:", dates, format_func=lambda d: fmt_date(d).replace("/", "-"))
+        hoadons = db.get_hoadons_by_date_str(date_choice, phong=phong_filter)
+        if not hoadons:
+            st.info("Không có hóa đơn nào trong ngày này.")
+            return
         
     st.write("### Chọn các hóa đơn để xuất Excel")
     
     selected_hds = []
     
+    toggle_key = f"chk_select_all_{mode}_{selected_contract['ma_hop_dong'] if selected_contract else date_choice}"
     def toggle_select_all():
-        val = st.session_state.get(f"chk_select_all_{selected['ma_hop_dong']}", False)
+        val = st.session_state.get(toggle_key, False)
         for h in hoadons:
             st.session_state[f"chk_export_{h['id']}"] = val
             
-    # Add a "Select All" checkbox
-    st.checkbox("Chọn tất cả", key=f"chk_select_all_{selected['ma_hop_dong']}", on_change=toggle_select_all)
+    st.checkbox("Chọn tất cả", key=toggle_key, on_change=toggle_select_all)
     
     for h in hoadons:
         col1, col2, col3 = st.columns([1, 7, 2], vertical_alignment="center")
         is_checked = col1.checkbox("Chọn", key=f"chk_export_{h['id']}", label_visibility="collapsed")
-        col2.write(f"**Số HĐ:** {h['so_hd']} | **Ngày:** {fmt_date(h['ngay_hd'])} | **ĐVTH:** {h['ten_ban']}")
+        
+        uploaded = h['uploaded_at'] if 'uploaded_at' in h.keys() else None
+        ngay_bs = fmt_date(str(uploaded).split(' ')[0]) if uploaded else '-'
+        if mode == "Theo Hợp đồng":
+            col2.markdown(f"**Ngày BS:** <span style='color:blue'>{ngay_bs}</span> | **Số HĐ:** {h['so_hd']} | **Ngày HĐ:** {fmt_date(h['ngay_hd'])} | **ĐVTH:** {h['ten_ban']}", unsafe_allow_html=True)
+        else:
+            contract_info = db.get_hop_dong(h['ma_hop_dong'])
+            kh_short = shorten_company_name(contract_info['khach_hang']) if contract_info else "Khách vãng lai"
+            col2.markdown(f"**HĐ:** <span style='color:green'>{kh_short}</span> | **Số HĐ:** {h['so_hd']} | **Ngày HĐ:** {fmt_date(h['ngay_hd'])} | **ĐVTH:** {h['ten_ban']}", unsafe_allow_html=True)
+            
         col3.write(f"**Tổng tiền:** {fmt_vnd(h['tong_cong'])}")
         if is_checked:
             selected_hds.append(h)
@@ -801,16 +1026,20 @@ def page_upload_lo():
             parsed_data = []
             for h in selected_hds:
                 d_extra = {}
-                # Parse lai file XML de lay mau so, ky hieu (vi khong luu trong CSDL)
                 if h['file_src'] and os.path.exists(h['file_src']):
                     with open(h['file_src'], "rb") as f:
                         d_extra = parsers.parse_file(f)
                 
-                # Merge data: uu tien thong tin trong DB, nhung lay mau so/ky hieu tu XML
-                pct = 1.0 if selected["loai_tu"] == "mot_lan" else (selected["pct_khau_tru"] or 0) / 100.0
-                loai_kt = "Trước VAT" if selected["loai_tu"] == "mot_lan" else (selected["loai_gia_tri_kt"] or "Trước VAT")
+                contract = db.get_hop_dong(h['ma_hop_dong'])
+                if not contract: continue
+                
+                pct = 1.0 if contract["loai_tu"] == "mot_lan" else (contract["pct_khau_tru"] or 0) / 100.0
+                loai_kt = "Trước VAT" if contract["loai_tu"] == "mot_lan" else (contract["loai_gia_tri_kt"] or "Trước VAT")
                 gia_tri_tinh = h['tong_cong'] if loai_kt == "Sau VAT" else h['tien_truoc_vat']
                 can_tru = (gia_tri_tinh or 0) * pct
+                
+                tus = db.list_tam_ung(contract["ma_hop_dong"])
+                ngay_gn_dau = tus[0]["ngay_giai_ngan"] if tus else date.today()
                 
                 parsed_data.append({
                     "so_hd": h["so_hd"],
@@ -820,7 +1049,10 @@ def page_upload_lo():
                     "tong_cong": h["tong_cong"],
                     "mau_so_hd": d_extra.get("mau_so_hd"),
                     "ky_hieu_hd": d_extra.get("ky_hieu_hd"),
-                    "can_tru": can_tru
+                    "can_tru": can_tru,
+                    "cif": contract['cif'] if 'cif' in contract.keys() and contract['cif'] else "",
+                    "ngay_gn_dau": ngay_gn_dau,
+                    "khe_uoc_vay": contract['khe_uoc_vay'] if 'khe_uoc_vay' in contract.keys() and contract['khe_uoc_vay'] else ""
                 })
                 
             try:
@@ -834,19 +1066,16 @@ def page_upload_lo():
                 ]
                 template_path = next((p for p in t1_paths if os.path.exists(p)), "Template.xlsx")
                 
-                # Load template default
                 wb = openpyxl.load_workbook(template_path)
                 ws = wb.active
                 
-                # Copy F col from template (row 8) - vi row 7 la header "(6)"
                 val_f = ws.cell(row=8, column=6).value
                 
-                # Write from row 8
                 start_row = 8
                 for i, d in enumerate(parsed_data):
                     r = start_row + i
                     # A: CIF
-                    ws.cell(row=r, column=1, value=selected['cif'] if selected['cif'] else "")
+                    ws.cell(row=r, column=1, value=d['cif'])
                     # B: Mẫu số hóa đơn
                     ws.cell(row=r, column=2, value=d.get("mau_so_hd") or "1")
                     # C: Ký hiệu
@@ -876,11 +1105,11 @@ def page_upload_lo():
                     # M: Ngân hàng
                     ws.cell(row=r, column=13, value="135")
                     # N: Ngày tháng năm giải ngân
-                    ws.cell(row=r, column=14, value=fmt_date(ngay_gn_dau))
+                    ws.cell(row=r, column=14, value=fmt_date(d['ngay_gn_dau']))
                     # O: Số tiền giải ngân (quy đổi VNĐ) - Giá trị thu hồi tạm ứng
                     ws.cell(row=r, column=15, value=d.get("can_tru") or 0)
-                    # P: Số tài khoản tiền vay -> Bỏ trống
-                    ws.cell(row=r, column=16, value="")
+                    # P: Số tài khoản tiền vay
+                    ws.cell(row=r, column=16, value=d['khe_uoc_vay'])
                     # Q: Loại chứng từ
                     ws.cell(row=r, column=17, value="01HDDT")
                 
@@ -909,7 +1138,7 @@ def page_upload_lo():
                 ]
                 template_hd_path = next((p for p in t2_paths if os.path.exists(p)), None)
                 
-                if os.path.exists(template_hd_path):
+                if template_hd_path:
                     wb2 = openpyxl.load_workbook(template_hd_path)
                     ws2 = wb2.active
                     
@@ -955,11 +1184,13 @@ def page_upload_lo():
                 
                 st.success(f"✅ Đã xử lý {len(parsed_data)} hóa đơn thành công!")
                 
+                suffix = selected_contract['ma_hop_dong'] if selected_contract else str(date_choice)
+                
                 col_btn1, col_btn2 = st.columns(2)
                 col_btn1.download_button(
                     label="📥 Tải file Upload Lô",
                     data=output,
-                    file_name=f"UploadLo_{selected['ma_hop_dong']}.xlsx",
+                    file_name=f"UploadLo_{suffix}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
@@ -968,7 +1199,7 @@ def page_upload_lo():
                     col_btn2.download_button(
                         label="📥 Tải Bảng kê Hóa đơn",
                         data=output2,
-                        file_name=f"BangKeHD_{selected['ma_hop_dong']}.xlsx",
+                        file_name=f"BangKeHD_{suffix}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
@@ -982,6 +1213,8 @@ if page.startswith("📊 Dashboard"):
     page_dashboard()
 elif page == "➕ Thêm Hợp đồng Tạm ứng":
     page_them_hop_dong()
+elif page == "📥 Import Hợp đồng (Excel)":
+    page_import_excel()
 elif page in ("💼 Quản lý Hợp đồng", "💼 Danh sách Hợp đồng"):
     page_hop_dong()
 elif page == "⏳ Duyệt Hóa đơn" or page == "✅ Duyệt HĐ chờ":
