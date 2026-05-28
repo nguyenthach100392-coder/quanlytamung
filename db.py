@@ -150,12 +150,12 @@ def add_hop_dong(data, user):
             (ma_hop_dong, khach_hang, cif, don_vi_thu_huong, so_hd, gia_tri_hd,
              ngay_hop_dong, ngay_ket_thuc_hd, loai_tu, loai_gia_tri_kt, pct_khau_tru, phong_phu_trach, ghi_chu, khe_uoc_vay, created_by)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (data["ma_hop_dong"], data["khach_hang"], data.get("cif"), data.get("don_vi_thu_huong"), data.get("so_hd"),
-             data.get("gia_tri_hd"), data.get("ngay_hop_dong"), data["ngay_ket_thuc_hd"],
+            (data.get("ma_hop_dong"), data.get("khach_hang"), data.get("cif"), data.get("don_vi_thu_huong"), data.get("so_hd"),
+             data.get("gia_tri_hd"), data.get("ngay_hop_dong"), data.get("ngay_ket_thuc_hd"),
              data.get("loai_tu", "khau_tru_dot"), data.get("loai_gia_tri_kt", "Trước VAT"),
              data.get("pct_khau_tru", 10.0), data.get("phong_phu_trach"), data.get("ghi_chu"), data.get("khe_uoc_vay"), user))
         c.commit()
-        log(c, "ADD_HOP_DONG", "hop_dong", data["ma_hop_dong"], user, "")
+        log(c, "ADD_HOP_DONG", "hop_dong", data.get("ma_hop_dong"), user, "")
 
 
 # ---- Tam ung (Giai ngan) ----
@@ -169,10 +169,10 @@ def add_tam_ung(data, user):
         c.execute("""INSERT INTO tam_ung
             (ma_giai_ngan, ma_hop_dong, so_tien_tu, ngay_giai_ngan, ghi_chu, created_by)
             VALUES (?,?,?,?,?,?)""",
-            (data["ma_giai_ngan"], data["ma_hop_dong"], data["so_tien_tu"],
-             data["ngay_giai_ngan"], data.get("ghi_chu"), user))
+            (data.get("ma_giai_ngan"), data.get("ma_hop_dong"), data.get("so_tien_tu"),
+             data.get("ngay_giai_ngan"), data.get("ghi_chu"), user))
         c.commit()
-        log(c, "ADD_GIAI_NGAN", "tam_ung", data["ma_giai_ngan"], user, f"Vào HD {data['ma_hop_dong']}")
+        log(c, "ADD_GIAI_NGAN", "tam_ung", data.get("ma_giai_ngan"), user, f"Vào HD {data.get('ma_hop_dong')}")
 
 def update_tam_ung_ghi_chu(ma_giai_ngan, ghi_chu):
     with get_conn() as c:
@@ -206,19 +206,19 @@ def add_hstt(data, user):
         c.execute("""INSERT INTO hstt
             (ma_hop_dong, dot_so, ngay_hstt, kl_truoc_vat, vat, tong_cong, loai_kl, ghi_chu, created_by)
             VALUES (?,?,?,?,?,?,?,?,?)""",
-            (data["ma_hop_dong"], data["dot_so"], data["ngay_hstt"],
-             data["kl_truoc_vat"], data.get("vat", 0), data.get("tong_cong", data["kl_truoc_vat"]),
+            (data.get("ma_hop_dong"), data.get("dot_so"), data.get("ngay_hstt"),
+             data.get("kl_truoc_vat"), data.get("vat", 0), data.get("tong_cong", data.get("kl_truoc_vat")),
              data.get("loai_kl", "Trước VAT"), data.get("ghi_chu"), user))
         c.commit()
-        log(c, "ADD_HSTT", "hstt", f"{data['ma_hop_dong']}/dot{data['dot_so']}", user, "")
+        log(c, "ADD_HSTT", "hstt", f"{data.get('ma_hop_dong')}/dot{data.get('dot_so')}", user, "")
 
 def update_hstt(hstt_id, data, user):
     with get_conn() as c:
         c.execute("""UPDATE hstt
             SET dot_so=?, ngay_hstt=?, kl_truoc_vat=?, vat=?, tong_cong=?, ghi_chu=?, loai_kl=?
             WHERE id=?""",
-            (data["dot_so"], data["ngay_hstt"], data["kl_truoc_vat"], data.get("vat", 0),
-             data.get("tong_cong", data["kl_truoc_vat"]), data.get("ghi_chu"), data.get("loai_kl", "Trước VAT"), hstt_id))
+            (data.get("dot_so"), data.get("ngay_hstt"), data.get("kl_truoc_vat"), data.get("vat", 0),
+             data.get("tong_cong", data.get("kl_truoc_vat")), data.get("ghi_chu"), data.get("loai_kl", "Trước VAT"), hstt_id))
         c.commit()
         log(c, "UPDATE_HSTT", "hstt", str(hstt_id), user, "")
 
@@ -248,16 +248,16 @@ def add_hoa_don(data, user, status="approved"):
              tien_truoc_vat, vat, tong_cong, ma_tra_cuu, file_src,
              status, uploaded_by, approved_by, approved_at, ghi_chu)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (data["ma_hop_dong"], data.get("dot_so", 1), data["so_hd"], data["ngay_hd"],
+            (data.get("ma_hop_dong"), data.get("dot_so", 1), data.get("so_hd"), data.get("ngay_hd"),
              data.get("mst_ban"), data.get("ten_ban"),
-             data["tien_truoc_vat"], data["vat"], data.get("tong_cong"),
+             data.get("tien_truoc_vat"), data.get("vat"), data.get("tong_cong"),
              data.get("ma_tra_cuu"), data.get("file_src"),
              status, user,
              user if status == "approved" else None,
              datetime.now() if status == "approved" else None,
              data.get("ghi_chu")))
         c.commit()
-        log(c, "ADD_HOA_DON", "hoa_don", data["so_hd"], user, "")
+        log(c, "ADD_HOA_DON", "hoa_don", data.get("so_hd"), user, "")
 
 
 def approve_hoa_don(hd_id, user):
@@ -376,6 +376,10 @@ def log(conn, action, entity, entity_id, username, details):
         (action, entity, entity_id, username, details)
     )
 
+def log_action(action, entity, entity_id, username, details):
+    with get_conn() as c:
+        log(c, action, entity, entity_id, username, details)
+
 def recent_audit(limit=50):
     with get_conn() as c:
         return c.execute("SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
@@ -409,7 +413,7 @@ def get_distinct_upload_dates(phong=None):
                 WHERE uploaded_at IS NOT NULL
                 ORDER BY d DESC
             """)
-        return [r["d"] for r in cur.fetchall() if r["d"]]
+        return [r.get("d") for r in cur.fetchall() if r.get("d")]
 
 def get_hoadons_by_date_str(date_str, phong=None):
     with get_conn() as c:
